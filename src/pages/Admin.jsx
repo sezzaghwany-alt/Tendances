@@ -105,7 +105,7 @@ function UsersTab() {
       <div className="card overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 dark:bg-gray-800/50">
-            <tr><th className="label px-4 py-3">Nom</th><th className="label px-4 py-3">Email</th><th className="label px-4 py-3">Rôle</th><th className="label px-4 py-3">Thème</th><th className="label px-4 py-3">Créé le</th></tr>
+            <tr><th className="text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide px-4 py-3 whitespace-nowrap">Nom</th><th className="text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide px-4 py-3 whitespace-nowrap">Email</th><th className="text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide px-4 py-3 whitespace-nowrap">Rôle</th><th className="text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide px-4 py-3 whitespace-nowrap">Thème</th><th className="text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide px-4 py-3 whitespace-nowrap">Créé le</th></tr>
           </thead>
           <tbody className="divide-y divide-gray-50 dark:divide-gray-800">
             {users.map(u => (
@@ -136,7 +136,9 @@ function ZonesTab() {
   const [zones, setZones] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
+  const [editId, setEditId] = useState(null)
   const [form, setForm] = useState({ code:'', label:'', classe:'C', icon:'🔬', color:'#1d6fa4' })
+  const [editForm, setEditForm] = useState({})
 
   useEffect(() => {
     supabase.from('zones').select('*').order('created_at').then(({ data }) => { setZones(data||[]); setLoading(false) })
@@ -145,6 +147,12 @@ function ZonesTab() {
   async function addZone() {
     const { data } = await supabase.from('zones').insert(form).select()
     if (data) { setZones(prev => [...prev, data[0]]); setShowForm(false); setForm({ code:'', label:'', classe:'C', icon:'🔬', color:'#1d6fa4' }) }
+  }
+
+  async function saveEdit(id) {
+    await supabase.from('zones').update(editForm).eq('id', id)
+    setZones(prev => prev.map(z => z.id === id ? { ...z, ...editForm } : z))
+    setEditId(null)
   }
 
   async function toggleZone(id, actif) {
@@ -170,10 +178,10 @@ function ZonesTab() {
             <div>
               <label className="label">Classe ISO</label>
               <select className="input" value={form.classe} onChange={e=>setForm(f=>({...f,classe:e.target.value}))}>
-                <option value="A">A — Critique (zone d'opération)</option>
+                <option value="A">A — Critique</option>
                 <option value="B">B — Fond classe A</option>
                 <option value="C">C — Nettoyé</option>
-                <option value="D">D — Zone de support</option>
+                <option value="D">D — Support</option>
               </select>
             </div>
             <div><label className="label">Icône (emoji)</label><input className="input text-2xl" value={form.icon} onChange={e=>setForm(f=>({...f,icon:e.target.value}))}/></div>
@@ -183,22 +191,50 @@ function ZonesTab() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="space-y-3">
         {zones.map(z => (
           <div key={z.id} className={`card p-4 border-l-4 ${!z.actif ? 'opacity-50' : ''}`} style={{ borderLeftColor: z.color }}>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <span className="text-2xl">{z.icon}</span>
-                <div>
-                  <div className="font-bold text-gray-900 dark:text-white">{z.label}</div>
-                  <div className="text-xs text-gray-400 font-mono">{z.code} · Classe {z.classe}</div>
+            {editId === z.id ? (
+              // Mode édition
+              <div className="space-y-3">
+                <div className="grid grid-cols-4 gap-3">
+                  <div><label className="label">Libellé</label><input className="input" value={editForm.label||''} onChange={e=>setEditForm(f=>({...f,label:e.target.value}))}/></div>
+                  <div>
+                    <label className="label">Classe</label>
+                    <select className="input" value={editForm.classe||'C'} onChange={e=>setEditForm(f=>({...f,classe:e.target.value}))}>
+                      <option value="A">A</option><option value="B">B</option><option value="C">C</option><option value="D">D</option>
+                    </select>
+                  </div>
+                  <div><label className="label">Icône</label><input className="input text-xl" value={editForm.icon||''} onChange={e=>setEditForm(f=>({...f,icon:e.target.value}))}/></div>
+                  <div><label className="label">Couleur</label><input type="color" className="input h-10 p-1" value={editForm.color||'#1d6fa4'} onChange={e=>setEditForm(f=>({...f,color:e.target.value}))}/></div>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => saveEdit(z.id)} className="flex items-center gap-1 text-sm bg-green-500 text-white px-3 py-1.5 rounded-lg"><Save size={13}/> Sauvegarder</button>
+                  <button onClick={() => setEditId(null)} className="flex items-center gap-1 text-sm bg-gray-200 dark:bg-gray-700 px-3 py-1.5 rounded-lg">Annuler</button>
                 </div>
               </div>
-              <button onClick={() => toggleZone(z.id, z.actif)}
-                className={`text-xs px-3 py-1 rounded-full font-bold ${z.actif ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                {z.actif ? 'Active' : 'Inactive'}
-              </button>
-            </div>
+            ) : (
+              // Mode affichage
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">{z.icon}</span>
+                  <div>
+                    <div className="font-bold text-gray-900 dark:text-white">{z.label}</div>
+                    <div className="text-xs text-gray-400 font-mono">{z.code} · Classe {z.classe}</div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => { setEditId(z.id); setEditForm({ label: z.label, classe: z.classe, icon: z.icon, color: z.color }) }}
+                    className="text-xs text-gray-400 hover:text-brand px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 flex items-center gap-1">
+                    ✏️ Modifier
+                  </button>
+                  <button onClick={() => toggleZone(z.id, z.actif)}
+                    className={`text-xs px-3 py-1.5 rounded-full font-bold ${z.actif ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                    {z.actif ? 'Active' : 'Inactive'}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         ))}
       </div>
@@ -230,7 +266,7 @@ function NormesTab() {
     <div className="card overflow-hidden">
       <table className="w-full text-sm">
         <thead className="bg-gray-50 dark:bg-gray-800/50">
-          <tr>{['Zone','Type','Norme max','Alerte','Action','Unité',''].map(h=><th key={h} className="label px-4 py-3 text-left">{h}</th>)}</tr>
+          <tr>{['Zone','Type','Norme max','Alerte','Action','Unité',''].map(h=><th key={h} className="text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide px-4 py-3 whitespace-nowrap">{h}</th>)}</tr>
         </thead>
         <tbody className="divide-y divide-gray-50 dark:divide-gray-800">
           {normes.map(n => {
