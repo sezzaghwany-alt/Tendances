@@ -180,7 +180,7 @@ export default function Saisie() {
             <thead>
               <tr className="text-left border-b border-gray-100 dark:border-gray-800">
                 {['Zone','Date','Type','Point','UFC','Opérateur','Actions'].map(h => (
-                  <th key={h} className="label pb-2 pr-3">{h}</th>
+                  <th key={h} className="text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide pb-2 pr-3 whitespace-nowrap">{h}</th>
                 ))}
               </tr>
             </thead>
