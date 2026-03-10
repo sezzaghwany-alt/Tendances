@@ -21,7 +21,7 @@ export default function Dashboard() {
   useEffect(() => {
     async function load() {
       const [c, z, n] = await Promise.all([
-        supabase.from('controles').select('*, zones(code,label,classe,icon,color)').order('date_controle', { ascending: false }).limit(500),
+        supabase.from('controles').select('*, zones(code,label,classe,icon,color)').order('date_controle', { ascending: false }).limit(5000),
         supabase.from('zones').select('*').eq('actif', true),
         supabase.from('normes').select('*, zones(code)'),
       ])
@@ -151,7 +151,7 @@ export default function Dashboard() {
             <thead>
               <tr className="text-left border-b border-gray-100 dark:border-gray-800">
                 {['Zone','Date','Type','Point','UFC','Statut'].map(h => (
-                  <th key={h} className="label pb-2 pr-4">{h}</th>
+                  <th key={h} className="text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide pb-2 pr-4 whitespace-nowrap">{h}</th>
                 ))}
               </tr>
             </thead>
