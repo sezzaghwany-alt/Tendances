@@ -55,7 +55,7 @@ export default function AuditTrail() {
           <thead className="bg-gray-50 dark:bg-gray-800/50">
             <tr className="text-left">
               {['Date / Heure','Utilisateur','Action','Table','Champ','Avant','Après','Justification'].map(h => (
-                <th key={h} className="label px-4 py-3">{h}</th>
+                <th key={h} className="text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide px-4 py-3 whitespace-nowrap">{h}</th>
               ))}
             </tr>
           </thead>
