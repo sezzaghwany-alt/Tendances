@@ -1,0 +1,15 @@
+# Cloudflare Pages — Configuration de déploiement
+# À copier dans le tableau de bord Cloudflare Pages
+
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "18"
+
+# Redirects pour React Router (SPA)
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
