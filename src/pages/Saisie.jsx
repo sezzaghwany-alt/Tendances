@@ -10,10 +10,17 @@ function getStatut(germes, n) {
   return 'C'
 }
 
+function formatDate(dateStr) {
+  if (!dateStr) return ''
+  const [y, m, d] = dateStr.split('-')
+  return `${d}/${m}/${y}`
+}
+
 export default function Saisie() {
   const { profile } = useAuth()
   const [zones, setZones] = useState([])
   const [normes, setNormes] = useState([])
+  const [points, setPoints] = useState([])
   const [controles, setControles] = useState([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -28,13 +35,15 @@ export default function Saisie() {
 
   useEffect(() => {
     async function load() {
-      const [z, n, c] = await Promise.all([
+      const [z, n, p, c] = await Promise.all([
         supabase.from('zones').select('*').eq('actif', true),
         supabase.from('normes').select('*, zones(code)'),
+        supabase.from('points_controle').select('*').eq('actif', true),
         supabase.from('controles').select('*, zones(label,icon,code), profiles(full_name)').order('created_at', { ascending: false }).limit(30),
       ])
       setZones(z.data || [])
       setNormes(n.data || [])
+      setPoints(p.data || [])
       setControles(c.data || [])
       if (z.data?.length) setForm(f => ({ ...f, zone_id: z.data[0].id }))
       setLoading(false)
@@ -48,8 +57,23 @@ export default function Saisie() {
     return map
   }, [normes])
 
+  // Points filtrés selon zone + type sélectionnés
+  const pointsFiltres = useMemo(() => {
+    return points.filter(p => p.zone_id === form.zone_id && p.type_controle === form.type_controle)
+      .sort((a, b) => a.point.localeCompare(b.point, undefined, { numeric: true }))
+  }, [points, form.zone_id, form.type_controle])
+
+  // Reset point quand zone ou type change
+  function handleZoneChange(zone_id) {
+    setForm(f => ({ ...f, zone_id, point: '' }))
+  }
+  function handleTypeChange(type_controle) {
+    setForm(f => ({ ...f, type_controle, point: '' }))
+  }
+
   const selectedZone = zones.find(z => z.id === form.zone_id)
   const currentNormes = selectedZone ? normesMap[`${selectedZone.code}_${form.type_controle}`] : null
+  const selectedPoint = points.find(p => p.zone_id === form.zone_id && p.type_controle === form.type_controle && p.point === form.point)
   const previewStatut = form.germes !== '' ? getStatut(Number(form.germes), currentNormes) : null
 
   async function handleSubmit() {
@@ -60,12 +84,12 @@ export default function Saisie() {
       date_controle: form.date_controle,
       type_controle: form.type_controle,
       point: form.point,
+      classe: selectedPoint?.classe || null,
       germes: Number(form.germes),
       lot: form.lot || null,
       observations: form.observations || null,
       operateur_id: profile.id,
     }).select('*, zones(label,icon,code), profiles(full_name)')
-
     setSaving(false)
     if (!error) {
       setSuccess(true)
@@ -78,14 +102,11 @@ export default function Saisie() {
   async function handleEdit(id, field, newValue) {
     if (!editJustification.trim()) return alert('Veuillez saisir une justification.')
     const old = controles.find(c => c.id === id)
-
-    // Log manuel dans audit_trail avec justification
     await supabase.from('audit_trail').insert({
       table_name: 'controles', record_id: id, action: 'UPDATE',
       field_name: field, old_value: String(old[field]), new_value: String(newValue),
       justification: editJustification, user_id: profile.id, user_name: profile.full_name,
     })
-
     await supabase.from('controles').update({ [field]: newValue }).eq('id', id)
     setControles(prev => prev.map(c => c.id === id ? { ...c, [field]: newValue } : c))
     setEditId(null)
@@ -98,7 +119,6 @@ export default function Saisie() {
     <div className="space-y-6">
       <h1 className="text-2xl font-extrabold text-gray-900 dark:text-white">Saisie d'un contrôle</h1>
 
-      {/* Formulaire */}
       <div className="card p-6 max-w-2xl">
         {success && (
           <div className="mb-4 bg-green-50 dark:bg-green-900/20 border border-green-200 text-green-700 rounded-lg px-4 py-3 text-sm font-medium">
@@ -109,17 +129,19 @@ export default function Saisie() {
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="label">Zone</label>
-            <select value={form.zone_id} onChange={e => setForm(f => ({ ...f, zone_id: e.target.value }))} className="input">
+            <select value={form.zone_id} onChange={e => handleZoneChange(e.target.value)} className="input">
               {zones.map(z => <option key={z.id} value={z.id}>{z.icon} {z.label} (Classe {z.classe})</option>)}
             </select>
           </div>
           <div>
             <label className="label">Date</label>
-            <input type="date" value={form.date_controle} onChange={e => setForm(f => ({ ...f, date_controle: e.target.value }))} className="input" />
+            <input type="date" value={form.date_controle}
+              onChange={e => setForm(f => ({ ...f, date_controle: e.target.value }))} className="input" />
+            <div className="text-xs text-gray-400 mt-1">{formatDate(form.date_controle)}</div>
           </div>
           <div>
             <label className="label">Type de contrôle</label>
-            <select value={form.type_controle} onChange={e => setForm(f => ({ ...f, type_controle: e.target.value }))} className="input">
+            <select value={form.type_controle} onChange={e => handleTypeChange(e.target.value)} className="input">
               <option value="ACTIF">🌬️ Actif (air)</option>
               <option value="PASSIF">📦 Passif (boîtes)</option>
               <option value="SURFACE">🧴 Surface</option>
@@ -127,13 +149,21 @@ export default function Saisie() {
           </div>
           <div>
             <label className="label">Point de prélèvement</label>
-            <input type="text" placeholder="ex: A1, P2, S3..." value={form.point}
-              onChange={e => setForm(f => ({ ...f, point: e.target.value }))} className="input" />
+            <select value={form.point} onChange={e => setForm(f => ({ ...f, point: e.target.value }))} className="input">
+              <option value="">-- Sélectionner un point --</option>
+              {pointsFiltres.map(p => (
+                <option key={p.id} value={p.point}>{p.point} — Classe {p.classe}</option>
+              ))}
+            </select>
+            {form.zone_id && pointsFiltres.length === 0 && (
+              <div className="text-xs text-yellow-500 mt-1">⚠️ Aucun point configuré pour ce type</div>
+            )}
           </div>
           <div className="col-span-2">
             <label className="label">Total des germes (UFC)</label>
             <input type="number" min="0" placeholder="0" value={form.germes}
-              onChange={e => setForm(f => ({ ...f, germes: e.target.value }))} className="input text-2xl font-bold font-mono" />
+              onChange={e => setForm(f => ({ ...f, germes: e.target.value }))}
+              className="input text-2xl font-bold font-mono" />
           </div>
           <div>
             <label className="label">N° de lot (optionnel)</label>
@@ -179,7 +209,7 @@ export default function Saisie() {
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left border-b border-gray-100 dark:border-gray-800">
-                {['Zone','Date','Type','Point','UFC','Opérateur','Actions'].map(h => (
+                {['Zone','Date','Type','Point','Classe','UFC','Opérateur','Actions'].map(h => (
                   <th key={h} className="text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide pb-2 pr-3 whitespace-nowrap">{h}</th>
                 ))}
               </tr>
@@ -187,10 +217,11 @@ export default function Saisie() {
             <tbody className="divide-y divide-gray-50 dark:divide-gray-800">
               {controles.map(c => (
                 <tr key={c.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/40">
-                  <td className="py-2 pr-3">{c.zones?.icon} {c.zones?.label}</td>
-                  <td className="py-2 pr-3 font-mono text-xs text-gray-500">{c.date_controle}</td>
-                  <td className="py-2 pr-3">{c.type_controle}</td>
+                  <td className="py-2 pr-3 whitespace-nowrap">{c.zones?.icon} {c.zones?.label}</td>
+                  <td className="py-2 pr-3 font-mono text-xs text-gray-500 whitespace-nowrap">{formatDate(c.date_controle)}</td>
+                  <td className="py-2 pr-3 whitespace-nowrap">{c.type_controle}</td>
                   <td className="py-2 pr-3 font-mono">{c.point}</td>
+                  <td className="py-2 pr-3 text-xs text-gray-500">{c.classe ? `Cl. ${c.classe}` : '—'}</td>
                   <td className="py-2 pr-3">
                     {editId === c.id ? (
                       <input type="number" defaultValue={c.germes} id={`edit_${c.id}`} className="input w-20 py-1 text-sm" />
@@ -198,7 +229,7 @@ export default function Saisie() {
                       <span className="font-mono font-bold">{c.germes}</span>
                     )}
                   </td>
-                  <td className="py-2 pr-3 text-xs text-gray-500">{c.profiles?.full_name}</td>
+                  <td className="py-2 pr-3 text-xs text-gray-500 whitespace-nowrap">{c.profiles?.full_name}</td>
                   <td className="py-2">
                     {editId === c.id ? (
                       <div className="space-y-1">
