@@ -11,12 +11,29 @@ function getStatut(germes, normes) {
 }
 
 const MOIS = ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc']
+const CLASSES = ['A','B','C','D']
+
+function getTrimestreRange(t) {
+  const ranges = {
+    'T1': ['2025-01-01', '2025-03-31'],
+    'T2': ['2025-04-01', '2025-06-30'],
+    'T3': ['2025-07-01', '2025-09-30'],
+    'T4': ['2025-10-01', '2025-12-31'],
+  }
+  return ranges[t] || null
+}
 
 export default function Dashboard() {
   const [controles, setControles] = useState([])
   const [zones, setZones] = useState([])
   const [normes, setNormes] = useState([])
   const [loading, setLoading] = useState(true)
+  const [filtreZone, setFiltreZone] = useState('ALL')
+  const [filtreClasse, setFiltreClasse] = useState('ALL')
+  const [filtreType, setFiltreType] = useState('ALL')
+  const [filtreTrimestre, setFiltreTrimestre] = useState('ALL')
+  const [dateDebut, setDateDebut] = useState('')
+  const [dateFin, setDateFin] = useState('')
 
   useEffect(() => {
     async function load() {
@@ -33,6 +50,23 @@ export default function Dashboard() {
     load()
   }, [])
 
+  // Quand trimestre change, mettre à jour les dates
+  function handleTrimestreChange(t) {
+    setFiltreTrimestre(t)
+    if (t === 'ALL') { setDateDebut(''); setDateFin('') }
+    else {
+      const range = getTrimestreRange(t)
+      if (range) { setDateDebut(range[0]); setDateFin(range[1]) }
+    }
+  }
+
+  // Quand dates changent manuellement, désélectionner le trimestre
+  function handleDateChange(field, val) {
+    if (field === 'debut') setDateDebut(val)
+    else setDateFin(val)
+    setFiltreTrimestre('CUSTOM')
+  }
+
   const normesMap = useMemo(() => {
     const map = {}
     normes.forEach(n => {
@@ -48,12 +82,21 @@ export default function Dashboard() {
       statut: getStatut(c.germes, normesMap[`${c.zones?.code}_${c.type_controle}`])
     })), [controles, normesMap])
 
-  const totalNC = enriched.filter(c => c.statut !== 'C').length
-  const totalAction = enriched.filter(c => c.statut === 'NC_ACTION').length
-  const txConformite = enriched.length ? Math.round((enriched.filter(c => c.statut === 'C').length / enriched.length) * 100) : 100
+  const filtered = useMemo(() => enriched.filter(c => {
+    if (filtreZone !== 'ALL' && c.zones?.code !== filtreZone) return false
+    if (filtreClasse !== 'ALL' && c.zones?.classe !== filtreClasse) return false
+    if (filtreType !== 'ALL' && c.type_controle !== filtreType) return false
+    if (dateDebut && c.date_controle < dateDebut) return false
+    if (dateFin && c.date_controle > dateFin) return false
+    return true
+  }), [enriched, filtreZone, filtreClasse, filtreType, dateDebut, dateFin])
+
+  const totalNC = filtered.filter(c => c.statut !== 'C').length
+  const totalAction = filtered.filter(c => c.statut === 'NC_ACTION').length
+  const txConformite = filtered.length ? Math.round((filtered.filter(c => c.statut === 'C').length / filtered.length) * 100) : 100
 
   const zoneStats = useMemo(() => zones.map(z => {
-    const zc = enriched.filter(c => c.zones?.code === z.code)
+    const zc = filtered.filter(c => c.zones?.code === z.code)
     const derniere = zc[0]
     return {
       ...z,
@@ -63,11 +106,11 @@ export default function Dashboard() {
       actions: zc.filter(c => c.statut === 'NC_ACTION').length,
       dernierStatut: derniere ? getStatut(derniere.germes, normesMap[`${z.code}_${derniere.type_controle}`]) : 'C',
     }
-  }), [zones, enriched, normesMap])
+  }), [zones, filtered, normesMap])
 
   const monthlyData = useMemo(() => {
     const map = {}
-    enriched.forEach(c => {
+    filtered.forEach(c => {
       const m = new Date(c.date_controle).getMonth()
       if (!map[m]) map[m] = { mois: MOIS[m], Conformes: 0, Alertes: 0, Actions: 0 }
       if (c.statut === 'C') map[m].Conformes++
@@ -75,23 +118,120 @@ export default function Dashboard() {
       else map[m].Actions++
     })
     return Object.values(map)
-  }, [enriched])
+  }, [filtered])
 
   const badgeClass = (s) => s === 'NC_ACTION' ? 'badge-action' : s === 'NC_ALERTE' ? 'badge-alerte' : 'badge-ok'
   const badgeLabel = (s) => s === 'NC_ACTION' ? '⛔ Action' : s === 'NC_ALERTE' ? '⚠️ Alerte' : '✅ Conforme'
+
+  const activeFilters = [
+    filtreZone !== 'ALL',
+    filtreClasse !== 'ALL',
+    filtreType !== 'ALL',
+    dateDebut || dateFin
+  ].filter(Boolean).length
+
+  function resetFilters() {
+    setFiltreZone('ALL'); setFiltreClasse('ALL'); setFiltreType('ALL')
+    setFiltreTrimestre('ALL'); setDateDebut(''); setDateFin('')
+  }
 
   if (loading) return <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand"/></div>
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-extrabold text-gray-900 dark:text-white">Tableau de bord</h1>
-        <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">Vue globale de toutes les zones — 2025</p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-extrabold text-gray-900 dark:text-white">Tableau de bord</h1>
+          <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">Vue globale de toutes les zones — 2025</p>
+        </div>
+        {activeFilters > 0 && (
+          <button onClick={resetFilters} className="text-xs text-brand hover:underline mt-1">
+            ✕ Réinitialiser les filtres ({activeFilters})
+          </button>
+        )}
+      </div>
+
+      {/* Filtres */}
+      <div className="card p-4 space-y-3">
+        <div className="flex flex-wrap gap-4 items-center">
+          <span className="text-xs font-bold text-gray-400 uppercase tracking-wide">🔍 Filtres</span>
+
+          {/* Zone */}
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-gray-500 font-semibold whitespace-nowrap">Zone</label>
+            <select value={filtreZone} onChange={e => setFiltreZone(e.target.value)} className="input py-1.5 text-sm w-44">
+              <option value="ALL">Toutes les zones</option>
+              {zones.map(z => <option key={z.code} value={z.code}>{z.icon} {z.label}</option>)}
+            </select>
+          </div>
+
+          {/* Classe */}
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-gray-500 font-semibold">Classe</label>
+            <select value={filtreClasse} onChange={e => setFiltreClasse(e.target.value)} className="input py-1.5 text-sm w-36">
+              <option value="ALL">Toutes classes</option>
+              {CLASSES.map(c => <option key={c} value={c}>Classe {c}</option>)}
+            </select>
+          </div>
+
+          {/* Type */}
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-gray-500 font-semibold whitespace-nowrap">Type</label>
+            <select value={filtreType} onChange={e => setFiltreType(e.target.value)} className="input py-1.5 text-sm w-36">
+              <option value="ALL">Tous les types</option>
+              <option value="ACTIF">🌬️ Actif</option>
+              <option value="PASSIF">📦 Passif</option>
+              <option value="SURFACE">🧴 Surface</option>
+            </select>
+          </div>
+
+          <div className="ml-auto text-xs text-gray-400 font-mono">{filtered.length} / {enriched.length} mesures</div>
+        </div>
+
+        {/* Filtre temporel */}
+        <div className="flex flex-wrap gap-4 items-center pt-2 border-t border-gray-100 dark:border-gray-800">
+          <span className="text-xs font-bold text-gray-400 uppercase tracking-wide">📅 Période</span>
+
+          {/* Trimestres */}
+          <div className="flex gap-1.5">
+            {['ALL','T1','T2','T3','T4'].map(t => (
+              <button key={t} onClick={() => handleTrimestreChange(t)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                  filtreTrimestre === t && t !== 'ALL'
+                    ? 'bg-brand text-white'
+                    : t === 'ALL' && filtreTrimestre === 'ALL'
+                    ? 'bg-navy text-white'
+                    : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
+                }`}>
+                {t === 'ALL' ? 'Toute l\'année' : t}
+              </button>
+            ))}
+          </div>
+
+          <span className="text-xs text-gray-400">ou</span>
+
+          {/* Dates personnalisées */}
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-gray-500 font-semibold">Du</label>
+            <input type="date" value={dateDebut} onChange={e => handleDateChange('debut', e.target.value)}
+              className="input py-1.5 text-sm w-36" />
+            <label className="text-xs text-gray-500 font-semibold">Au</label>
+            <input type="date" value={dateFin} onChange={e => handleDateChange('fin', e.target.value)}
+              className="input py-1.5 text-sm w-36" />
+          </div>
+
+          {/* Indicateur période active */}
+          {(dateDebut || dateFin) && (
+            <span className="text-xs bg-brand/10 text-brand px-2 py-1 rounded-full font-medium">
+              {dateDebut && dateFin ? `${dateDebut} → ${dateFin}` : dateDebut ? `Depuis ${dateDebut}` : `Jusqu'au ${dateFin}`}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* KPIs */}
       <div className="grid grid-cols-4 gap-4">
-        <StatCard label="Mesures totales" value={enriched.length} icon="📊" />
+        <StatCard label="Mesures filtrées" value={filtered.length} icon="📊" />
         <StatCard label="Non-conformités" value={totalNC} color="text-red-500" icon="🚨" />
         <StatCard label="Dépass. action" value={totalAction} color="text-red-600" icon="⛔" />
         <StatCard label="Taux conformité" value={`${txConformite}%`} color="text-green-600" icon="✅" />
@@ -99,8 +239,8 @@ export default function Dashboard() {
 
       {/* Zones */}
       <div className="grid grid-cols-3 gap-4">
-        {zoneStats.map(z => (
-          <div key={z.id} className={`card p-5 border-l-4`}
+        {zoneStats.filter(z => filtreZone === 'ALL' || z.code === filtreZone).map(z => (
+          <div key={z.id} className="card p-5 border-l-4"
             style={{ borderLeftColor: z.actions > 0 ? '#dc2626' : z.alertes > 0 ? '#d97706' : '#16a34a' }}>
             <div className="flex justify-between items-start mb-3">
               <div>
@@ -128,7 +268,10 @@ export default function Dashboard() {
 
       {/* Graphique mensuel */}
       <div className="card p-5">
-        <h2 className="font-bold text-gray-800 dark:text-white mb-4">📈 Évolution mensuelle — Toutes zones</h2>
+        <h2 className="font-bold text-gray-800 dark:text-white mb-4">
+          📈 Évolution mensuelle
+          {activeFilters > 0 && <span className="ml-2 text-xs text-brand font-normal">(données filtrées)</span>}
+        </h2>
         <ResponsiveContainer width="100%" height={220}>
           <BarChart data={monthlyData} margin={{ top: 4, right: 10, left: -20, bottom: 0 }} barCategoryGap="25%">
             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
@@ -145,7 +288,7 @@ export default function Dashboard() {
 
       {/* Derniers contrôles */}
       <div className="card p-5">
-        <h2 className="font-bold text-gray-800 dark:text-white mb-4">🕐 Derniers contrôles saisis</h2>
+        <h2 className="font-bold text-gray-800 dark:text-white mb-4">🕐 Derniers contrôles</h2>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -156,14 +299,14 @@ export default function Dashboard() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50 dark:divide-gray-800">
-              {enriched.slice(0, 10).map(c => (
+              {filtered.slice(0, 15).map(c => (
                 <tr key={c.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
-                  <td className="py-2 pr-4">{c.zones?.icon} {c.zones?.label}</td>
-                  <td className="py-2 pr-4 text-gray-500 font-mono text-xs">{c.date_controle}</td>
-                  <td className="py-2 pr-4">{c.type_controle}</td>
+                  <td className="py-2 pr-4 whitespace-nowrap">{c.zones?.icon} {c.zones?.label}</td>
+                  <td className="py-2 pr-4 text-gray-500 font-mono text-xs whitespace-nowrap">{c.date_controle}</td>
+                  <td className="py-2 pr-4 whitespace-nowrap">{c.type_controle}</td>
                   <td className="py-2 pr-4 font-mono">{c.point}</td>
                   <td className="py-2 pr-4 font-mono font-bold">{c.germes}</td>
-                  <td className="py-2"><span className={badgeClass(c.statut)}>{badgeLabel(c.statut)}</span></td>
+                  <td className="py-2 whitespace-nowrap"><span className={badgeClass(c.statut)}>{badgeLabel(c.statut)}</span></td>
                 </tr>
               ))}
             </tbody>
