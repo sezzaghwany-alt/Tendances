@@ -53,7 +53,7 @@ export default function Dashboard() {
       while (true) {
         const { data, error } = await supabase
           .from('controles')
-          .select('id, date_controle, zone_id, type_controle, point, germes, zones(code,label,classe,icon,color)')
+          .select('id, date_controle, zone_id, type_controle, point, germes, classe, zones(code,label,classe,icon,color)')
           .order('date_controle', { ascending: false })
           .range(from, from + pageSize - 1)
         if (error || !data || data.length === 0) break
