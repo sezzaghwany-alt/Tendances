@@ -160,6 +160,13 @@ function ZonesTab() {
     setZones(prev => prev.map(z => z.id === id ? { ...z, actif: !actif } : z))
   }
 
+  async function deleteZone(id, label) {
+    if (!window.confirm(`Supprimer la zone "${label}" ? Cette action est irréversible.`)) return
+    const { error } = await supabase.from('zones').delete().eq('id', id)
+    if (error) { alert('Erreur : ' + error.message); return }
+    setZones(prev => prev.filter(z => z.id !== id))
+  }
+
   if (loading) return <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-brand mx-auto mt-10"/>
 
   return (
@@ -231,6 +238,10 @@ function ZonesTab() {
                   <button onClick={() => toggleZone(z.id, z.actif)}
                     className={`text-xs px-3 py-1.5 rounded-full font-bold ${z.actif ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
                     {z.actif ? 'Active' : 'Inactive'}
+                  </button>
+                  <button onClick={() => deleteZone(z.id, z.label)}
+                    className="text-xs text-red-400 hover:text-red-600 px-3 py-1.5 rounded-lg border border-red-200 dark:border-red-800 flex items-center gap-1">
+                    <Trash2 size={13}/> Supprimer
                   </button>
                 </div>
               </div>
