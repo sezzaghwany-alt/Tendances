@@ -103,7 +103,7 @@ export default function Dashboard() {
 
   const filtered = useMemo(() => enriched.filter(c => {
     if (filtreZone !== 'ALL' && c.zones?.code !== filtreZone) return false
-    if (filtreClasse !== 'ALL' && c.zones?.classe !== filtreClasse) return false
+    if (filtreClasse !== 'ALL' && c.classe !== filtreClasse) return false
     if (filtreType !== 'ALL' && c.type_controle !== filtreType) return false
     if (dateDebut && c.date_controle < dateDebut) return false
     if (dateFin && c.date_controle > dateFin) return false
@@ -114,18 +114,42 @@ export default function Dashboard() {
   const totalAction = filtered.filter(c => c.statut === 'NC_ACTION').length
   const txConformite = filtered.length ? Math.round((filtered.filter(c => c.statut === 'C').length / filtered.length) * 100) : 100
 
-  const zoneStats = useMemo(() => zones.map(z => {
-    const zc = filtered.filter(c => c.zones?.code === z.code)
-    const derniere = zc[0]
-    return {
-      ...z,
-      total: zc.length,
-      conformes: zc.filter(c => c.statut === 'C').length,
-      alertes: zc.filter(c => c.statut === 'NC_ALERTE').length,
-      actions: zc.filter(c => c.statut === 'NC_ACTION').length,
-      dernierStatut: derniere ? getStatut(derniere.germes, normesMap[`${z.code}_${derniere.type_controle}`]) : 'C',
-    }
-  }), [zones, filtered, normesMap])
+  const zoneStats = useMemo(() => {
+    const stats = []
+    zones.forEach(z => {
+      const zc = filtered.filter(c => c.zones?.code === z.code)
+      const classes = [...new Set(zc.map(c => c.classe).filter(Boolean))].sort()
+      if (classes.length <= 1) {
+        const derniere = zc[0]
+        stats.push({
+          ...z,
+          classeLabel: classes[0] || z.classe,
+          total: zc.length,
+          conformes: zc.filter(c => c.statut === 'C').length,
+          alertes: zc.filter(c => c.statut === 'NC_ALERTE').length,
+          actions: zc.filter(c => c.statut === 'NC_ACTION').length,
+          dernierStatut: derniere ? getStatut(derniere.germes, normesMap[`${z.code}_${derniere.type_controle}`]) : 'C',
+          key: z.code,
+        })
+      } else {
+        classes.forEach(cl => {
+          const cc = zc.filter(c => c.classe === cl)
+          const derniere = cc[0]
+          stats.push({
+            ...z,
+            classeLabel: cl,
+            total: cc.length,
+            conformes: cc.filter(c => c.statut === 'C').length,
+            alertes: cc.filter(c => c.statut === 'NC_ALERTE').length,
+            actions: cc.filter(c => c.statut === 'NC_ACTION').length,
+            dernierStatut: derniere ? getStatut(derniere.germes, normesMap[`${z.code}_${derniere.type_controle}`]) : 'C',
+            key: `${z.code}_${cl}`,
+          })
+        })
+      }
+    })
+    return stats
+  }, [zones, filtered, normesMap])
 
   const monthlyData = useMemo(() => {
     const map = {}
@@ -247,13 +271,13 @@ export default function Dashboard() {
       {/* Zones */}
       <div className="grid grid-cols-3 gap-4">
         {zoneStats.filter(z => filtreZone === 'ALL' || z.code === filtreZone).map(z => (
-          <div key={z.id} className="card p-5 border-l-4"
+          <div key={z.key} className="card p-5 border-l-4"
             style={{ borderLeftColor: z.actions > 0 ? '#dc2626' : z.alertes > 0 ? '#d97706' : '#16a34a' }}>
             <div className="flex justify-between items-start mb-3">
               <div>
                 <div className="text-xl mb-0.5">{z.icon}</div>
                 <div className="font-bold text-gray-900 dark:text-white">{z.label}</div>
-                <div className="text-xs text-gray-400">Classe {z.classe}</div>
+                <div className="text-xs text-gray-400">Classe {z.classeLabel}</div>
               </div>
               <span className={badgeClass(z.dernierStatut)}>{badgeLabel(z.dernierStatut)}</span>
             </div>
