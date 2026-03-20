@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo, useRef } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { fullStats, interpretSeries } from '@/lib/statsUtils'
+import ConclusionZone from '@/components/ConclusionZone'
 
 const TRIMESTRES = {
   T1: ['2025-01-01','2025-03-31'],
@@ -259,6 +260,14 @@ function ChartVue1({ salle, data, type, norme, alerte, action, classe, pointsRef
         <canvas ref={canvasRef}/>
       </div>
       <StatsBloc vals={chartData.allVals} alerte={alerte} action={action} periode={periode}/>
+      <ConclusionZone
+        zone={salle}
+        type={type}
+        classe={classe}
+        controles={chartData.allVals.map((g,i)=>({germes:g, point:chartData.pts[Math.floor(i/chartData.isos.length)], date_controle:''}))}
+        normes={{ norme, alerte, action, unite:'UFC' }}
+        periode={periode}
+      />
     </div>
   )
 }
