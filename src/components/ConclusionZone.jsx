@@ -133,8 +133,7 @@ export default function ConclusionZone({ zone, type, classe, controles, normes, 
         )}
 
         <p className="text-xs text-gray-400 italic">
-          Référence : GMP Annexe 1 · SOP AQ-R076 · Norme applicable : &lt;{norme} {unite}
-          (Alerte : {alerte} · Action : {action})
+          Norme applicable : &lt;{norme} {unite} · Alerte : {alerte} · Action : {action}
         </p>
       </div>
     </div>
