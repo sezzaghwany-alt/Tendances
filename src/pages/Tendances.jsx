@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabaseClient'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer } from 'recharts'
 import { fullStats, interpretSeries } from '@/lib/statsUtils'
 import ChartInterpretation from '@/components/ChartInterpretation'
+import ConclusionZone from '@/components/ConclusionZone'
 
 const MOIS = ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc']
 const TYPES = ['ACTIF','PASSIF','SURFACE']
@@ -335,6 +336,24 @@ export default function Tendances() {
           Aucune donnée pour cette sélection.
         </div>
       )}
+
+      {/* Conclusion générale — visible seulement sur toute l'année */}
+      {!loadingControles && controles.length > 0 && filtreMode==='trimestre' && filtreTrimestre==='ALL' && typesAffiches.map(type => {
+        const sa = statsAndInterpret[type]
+        if (!sa) return null
+        const ctrlType = controles.filter(c => c.type_controle === type)
+        return (
+          <ConclusionZone
+            key={type}
+            zone={selectedZoneObj?.label || selectedZone}
+            type={type}
+            classe={filtreClasse !== 'ALL' ? filtreClasse : selectedZoneObj?.classe}
+            controles={ctrlType}
+            normes={sa.normes}
+            periode={null}
+          />
+        )
+      })}
     </div>
   )
 }
