@@ -333,6 +333,15 @@ function SallesTab() {
     if (data) { setSalles(prev=>[...prev, data[0]]); setShowForm(false); setForm(f=>({...f,code:'',label:''})) }
   }
 
+  const [editSalleId, setEditSalleId] = useState(null)
+  const [editSalleForm, setEditSalleForm] = useState({})
+
+  async function saveSalle(id) {
+    await supabase.from('salles').update(editSalleForm).eq('id', id)
+    setSalles(prev=>prev.map(s=>s.id===id?{...s,...editSalleForm}:s))
+    setEditSalleId(null)
+  }
+
   async function toggleSalle(id, actif) {
     await supabase.from('salles').update({ actif: !actif }).eq('id', id)
     setSalles(prev=>prev.map(s=>s.id===id?{...s,actif:!actif}:s))
@@ -391,7 +400,18 @@ function SallesTab() {
                   </button>
                 </td>
                 <td className="px-4 py-3">
-                  <button onClick={()=>deleteSalle(s.id,s.label)} className="text-xs text-red-400 hover:text-red-600 flex items-center gap-1"><Trash2 size={13}/> Supprimer</button>
+                  {editSalleId === s.id ? (
+                    <div className="flex gap-2 items-center">
+                      <input value={editSalleForm.label||''} onChange={e=>setEditSalleForm(f=>({...f,label:e.target.value}))} className="input py-1 text-xs w-40" placeholder="Libellé"/>
+                      <button onClick={()=>saveSalle(s.id)} className="text-xs bg-green-500 text-white px-2 py-1 rounded flex items-center gap-1"><Save size={12}/> OK</button>
+                      <button onClick={()=>setEditSalleId(null)} className="text-xs text-gray-400">✕</button>
+                    </div>
+                  ) : (
+                    <div className="flex gap-2">
+                      <button onClick={()=>{setEditSalleId(s.id);setEditSalleForm({label:s.label,code:s.code})}} className="text-xs text-gray-400 hover:text-brand flex items-center gap-1">✏️ Modifier</button>
+                      <button onClick={()=>deleteSalle(s.id,s.label)} className="text-xs text-red-400 hover:text-red-600 flex items-center gap-1"><Trash2 size={13}/> Supprimer</button>
+                    </div>
+                  )}
                 </td>
               </tr>
             ))}
