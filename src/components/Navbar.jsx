@@ -7,6 +7,7 @@ const links = [
   { to: '/',          label: 'Dashboard',    icon: LayoutDashboard,  roles: ['admin','operateur','lecteur'] },
   { to: '/tendances', label: 'Tendances',     icon: TrendingUp,       roles: ['admin','operateur','lecteur'] },
   { to: '/points',    label: 'Points/Salles', icon: TrendingUp,       roles: ['admin','operateur','lecteur'] },
+  { to: '/personnel', label: 'Personnel',     icon: TrendingUp,       roles: ['admin','operateur','lecteur'] },
   { to: '/alertes',   label: 'Alertes',       icon: AlertTriangle,    roles: ['admin','operateur','lecteur'] },
   { to: '/saisie',    label: 'Saisie',        icon: PenLine,          roles: ['admin','operateur'] },
   { to: '/audit',     label: 'Audit Trail',   icon: ClipboardList,    roles: ['admin'] },
