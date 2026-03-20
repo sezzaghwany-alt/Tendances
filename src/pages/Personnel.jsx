@@ -379,48 +379,62 @@ export default function Personnel() {
           {/* Tableau récap */}
           <div className="card p-5">
             <div className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-4">Résultats par opérateur — toutes positions</div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left border-b border-gray-100 dark:border-gray-800">
-                    {['Opérateur','Contrôles','NC','Conformité',...POSITIONS].map(h => (
-                      <th key={h} className="text-xs font-bold text-gray-400 uppercase tracking-wide pb-2 pr-3 whitespace-nowrap">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50 dark:divide-gray-800">
-                  {(selOp === 'ALL' ? operateurs : [selOp]).map((op, oi) => {
-                    const od = dataFiltered.filter(r => r.operateur_nom === op)
-                    if (!od.length) return null
-                    const nc = od.filter(r => POSITIONS.some(p => (r[p]||0) > NORME)).length
-                    const tx = Math.round((1-nc/od.length)*100)
-                    return (
-                      <tr key={op} className="hover:bg-gray-50 dark:hover:bg-gray-800/40">
-                        <td className="py-2 pr-3 font-medium">
-                          <span className="inline-block w-2.5 h-2.5 rounded-full mr-2" style={{ background: OP_COLORS[oi%OP_COLORS.length] }}/>
-                          {op}
-                        </td>
-                        <td className="py-2 pr-3 font-mono">{od.length}</td>
-                        <td className="py-2 pr-3 font-mono font-bold" style={{ color: nc>0?'#dc2626':'#16a34a' }}>{nc}</td>
-                        <td className="py-2 pr-3">
-                          <span className="text-xs font-bold px-2 py-0.5 rounded" style={{
-                            background: tx>=95?'#E8F5E9':tx>=80?'#FFF3E0':'#FFEBEE',
-                            color: tx>=95?'#3B6D11':tx>=80?'#854F0B':'#A32D2D'
-                          }}>{tx}%</span>
-                        </td>
-                        {POSITIONS.map(p => {
-                          const max = Math.max(...od.map(r => r[p]||0))
-                          return (
-                            <td key={p} className="py-2 pr-3 font-mono text-xs font-bold" style={{ color: max>=NORME?'#dc2626':max>0?'#d97706':'#888' }}>
-                              {max}
-                            </td>
-                          )
-                        })}
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
+            <div className="space-y-0 divide-y divide-gray-100 dark:divide-gray-800">
+              {(selOp === 'ALL' ? operateurs : [selOp]).map((op, oi) => {
+                const od = dataFiltered.filter(r => r.operateur_nom === op)
+                if (!od.length) return null
+                const nc = od.filter(r => POSITIONS.some(p => (r[p]||0) > NORME)).length
+                const tx = Math.round((1-nc/od.length)*100)
+                const maxPerPos = {}
+                POSITIONS.forEach(p => { maxPerPos[p] = Math.max(...od.map(r => r[p]||0)) })
+                const worstPos = Object.entries(maxPerPos).sort((a,b)=>b[1]-a[1])[0]
+                const globalMax = Math.max(...Object.values(maxPerPos))
+
+                return (
+                  <div key={op} className="flex items-center gap-4 py-3 px-1">
+                    {/* Nom */}
+                    <div className="w-36 font-semibold text-sm text-gray-800 dark:text-white shrink-0">{op}</div>
+
+                    {/* NC + Taux */}
+                    <div className="w-20 shrink-0 text-center">
+                      <div className="font-bold text-sm" style={{ color: nc>0?'#dc2626':'#16a34a' }}>{nc} NC</div>
+                      <div className="text-xs text-gray-400">{od.length} ctrl.</div>
+                    </div>
+                    <div className="w-14 shrink-0">
+                      <span className="text-xs font-bold px-2 py-0.5 rounded" style={{
+                        background: tx>=95?'#E8F5E9':tx>=80?'#FFF3E0':'#FFEBEE',
+                        color: tx>=95?'#3B6D11':tx>=80?'#854F0B':'#A32D2D'
+                      }}>{tx}%</span>
+                    </div>
+
+                    {/* Barres par position */}
+                    <div className="flex gap-3 flex-1 items-end">
+                      {POSITIONS.map(p => {
+                        const val = maxPerPos[p]
+                        const barH = globalMax > 0 ? Math.max(Math.round((val/globalMax)*48), val>0?6:3) : 3
+                        const col = val >= NORME ? '#dc2626' : val > 0 ? '#d97706' : '#378ADD'
+                        return (
+                          <div key={p} className="flex flex-col items-center gap-1">
+                            <div className="text-[9px] font-bold text-gray-400">{p}</div>
+                            <div style={{
+                              width: 28, height: barH,
+                              background: col + (val===0?'55':'cc'),
+                              borderRadius: 3,
+                              minHeight: 4,
+                            }}/>
+                            <div className="text-[10px] font-bold" style={{ color: val>=NORME?'#dc2626':val>0?'#d97706':'#888' }}>{val}</div>
+                          </div>
+                        )
+                      })}
+                    </div>
+
+                    {/* Pire position */}
+                    <div className="text-xs text-gray-400 shrink-0 w-20">
+                      {worstPos[1]>0 && <span>Max: <span className="font-bold text-gray-600 dark:text-gray-300">{worstPos[0]}</span></span>}
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           </div>
 
