@@ -116,7 +116,7 @@ function ConclusionPersonnel({ data, operateurs, periode }) {
         ))}
 
         <p className="text-xs text-gray-400 italic mt-2">
-          Norme applicable : &lt;{NORME} UFC/boîte — Référence : GMP Annexe 1 / SOP AQ-R076
+          Norme applicable : &lt;{NORME} UFC/boîte
         </p>
       </div>
     </div>
