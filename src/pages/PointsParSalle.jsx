@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useRef, useCallback } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 
 const TRIMESTRES = {
@@ -7,40 +7,52 @@ const TRIMESTRES = {
   T3: ['2025-07-01','2025-09-30'],
   T4: ['2025-10-01','2025-12-31'],
 }
-const MOIS_SHORT = ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc']
 const PALETTE = ['#378ADD','#1D9E75','#D4537E','#BA7517','#7F77DD','#D85A30','#639922','#5F5E5A','#0F6E56','#993556','#854F0B','#185FA5']
 const CLASSE_BG  = { A:'#FCE4EC', B:'#FFF3E0', C:'#E8F4FD', D:'#E8F5E9' }
 const CLASSE_TXT = { A:'#993556', B:'#854F0B', C:'#185FA5', D:'#3B6D11' }
 
-// ── Plugin lignes alerte/action ────────────────────────────────────────────
-function makeRefPlugin(alerte, action, horizontal = false) {
+function fmtDate(iso) {
+  if (!iso) return ''
+  const [y,m,d] = iso.split('-')
+  return `${d}/${m}/${y}`
+}
+function fmtDateShort(iso) {
+  if (!iso) return ''
+  const [y,m,d] = iso.split('-')
+  return `${d}/${m}`
+}
+
+// ── Plugin lignes norme / alerte / action ──────────────────────────────────
+function makeRefPlugin(norme, alerte, action) {
   return {
     id: 'refLines',
     afterDraw(chart) {
-      const { ctx: c, scales } = chart
-      const { x, y } = scales
-      ;[[alerte, '#d97706', 'Alerte'], [action, '#dc2626', 'Action']].forEach(([val, col, lbl]) => {
-        if (val === null || val === undefined) return
-        c.save(); c.setLineDash([5, 4]); c.lineWidth = 1.5; c.strokeStyle = col
-        if (horizontal) {
-          const xp = x.getPixelForValue(val)
-          c.beginPath(); c.moveTo(xp, y.top); c.lineTo(xp, y.bottom); c.stroke()
-          c.setLineDash([]); c.font = '9px sans-serif'; c.fillStyle = col; c.textAlign = 'center'
-          c.fillText(`${lbl} ${val}`, xp, y.top - 4)
-        } else {
-          const yp = y.getPixelForValue(val)
-          c.beginPath(); c.moveTo(x.left, yp); c.lineTo(x.right, yp); c.stroke()
-          c.setLineDash([]); c.font = '9px sans-serif'; c.fillStyle = col; c.textAlign = 'right'
-          c.fillText(`${lbl} ${val}`, x.right, yp - 3)
-        }
+      const { ctx: c, scales: { y, x } } = chart
+      const lines = [
+        [norme,  '#2563eb', 'Norme'],
+        [alerte, '#d97706', 'Alerte'],
+        [action, '#dc2626', 'Action'],
+      ]
+      lines.forEach(([val, col, lbl]) => {
+        if (val === null || val === undefined || val > (y.max || 9999)) return
+        const yp = y.getPixelForValue(val)
+        c.save()
+        c.setLineDash(lbl === 'Norme' ? [8,4] : [5,4])
+        c.lineWidth = lbl === 'Norme' ? 2 : 1.5
+        c.strokeStyle = col
+        c.beginPath(); c.moveTo(x.left, yp); c.lineTo(x.right, yp); c.stroke()
+        c.setLineDash([])
+        c.font = `${lbl === 'Norme' ? 'bold ' : ''}9px sans-serif`
+        c.fillStyle = col; c.textAlign = 'right'
+        c.fillText(`${lbl} ${val}`, x.right, yp - 3)
         c.restore()
       })
     }
   }
 }
 
-// ── Plugin valeurs NC sur barres ───────────────────────────────────────────
-function makeValsPlugin(alerte, action, horizontal = false) {
+// ── Plugin valeurs sur barres (toujours si NC, ou si trimestre sélectionné) ─
+function makeValsPlugin(alerte, action, showAll = false) {
   return {
     id: 'vals',
     afterDatasetsDraw(chart) {
@@ -49,17 +61,13 @@ function makeValsPlugin(alerte, action, horizontal = false) {
       d.datasets.forEach((ds, di) => {
         chart.getDatasetMeta(di).data.forEach((bar, i) => {
           const val = ds.data[i]
-          if (!val && val !== 0) return
+          if (val === null || val === undefined) return
           const nc = val >= action ? '#dc2626' : val >= alerte ? '#d97706' : null
-          if (!nc) return
-          c.font = 'bold 9px sans-serif'; c.fillStyle = nc
-          if (horizontal) {
-            c.textAlign = 'left'
-            c.fillText(val, bar.x + 3, bar.y + 3)
-          } else {
-            c.textAlign = 'center'
-            c.fillText(val, bar.x, bar.y - 4)
-          }
+          if (!nc && !showAll) return
+          const col = nc || '#888780'
+          c.font = `${nc ? 'bold ' : ''}9px sans-serif`
+          c.fillStyle = col; c.textAlign = 'center'
+          c.fillText(val, bar.x, bar.y - 4)
         })
       })
       c.restore()
@@ -67,64 +75,65 @@ function makeValsPlugin(alerte, action, horizontal = false) {
   }
 }
 
-// ── Composant graphique Vue 1 : barres verticales groupées par point ───────
-function ChartVue1({ salle, data, type, alerte, action, classe }) {
+// ── Vue 1 : barres verticales groupées par point ──────────────────────────
+function ChartVue1({ salle, data, type, norme, alerte, action, classe, periodeLabel, showTrimestre }) {
   const canvasRef = useRef(null)
   const chartRef  = useRef(null)
 
-  const points = useMemo(() => {
+  const { points, dates, datasets } = useMemo(() => {
     const prefix = type === 'ACTIF' ? 'A' : type === 'PASSIF' ? 'P' : 'S'
-    return [...new Set(data.map(c => c.point))].filter(p => p.startsWith(prefix))
-      .sort((a, b) => { const na = parseInt(a.slice(1)), nb = parseInt(b.slice(1)); return isNaN(na)||isNaN(nb)?a.localeCompare(b):na-nb })
-  }, [data, type])
+    const pts = [...new Set(data.filter(c=>c.type_controle===type).map(c=>c.point))]
+      .filter(p => p.startsWith(prefix))
+      .sort((a,b) => { const na=parseInt(a.slice(1)),nb=parseInt(b.slice(1)); return isNaN(na)||isNaN(nb)?a.localeCompare(b):na-nb })
 
-  // Dates uniques triées
-  const dates = useMemo(() => {
-    return [...new Set(data.filter(c=>c.type_controle===type).map(c=>c.date_controle))]
-      .sort()
-      .map(d => { const [y,m,j]=d.split('-'); return `${j}/${m}` })
-  }, [data, type])
+    const isos = [...new Set(data.filter(c=>c.type_controle===type).map(c=>c.date_controle))].sort()
+    const lblDates = isos.map(d => showTrimestre ? fmtDateShort(d) : '')
 
-  const datasets = useMemo(() => {
-    return dates.map((dateLabel, i) => {
-      const dateISO = data.find(c => {
-        const [y,m,j]=c.date_controle.split('-'); return `${j}/${m}`===dateLabel
-      })?.date_controle
-      return {
-        label: dateLabel,
-        data: points.map(p => {
-          const vals = data.filter(c => {
-            const [y,m,j]=c.date_controle.split('-')
-            return `${j}/${m}`===dateLabel && c.point===p && c.type_controle===type
-          }).map(c => c.germes)
-          return vals.length ? vals[0] : null
-        }),
-        backgroundColor: PALETTE[i % PALETTE.length] + 'bb',
-        borderColor: PALETTE[i % PALETTE.length],
-        borderWidth: 1.5,
-      }
-    })
-  }, [dates, points, data, type])
+    const ds = isos.map((iso, i) => ({
+      label: fmtDate(iso),
+      data: pts.map(p => {
+        const v = data.find(c => c.date_controle===iso && c.point===p && c.type_controle===type)
+        return v ? v.germes : null
+      }),
+      backgroundColor: PALETTE[i % PALETTE.length] + 'bb',
+      borderColor: PALETTE[i % PALETTE.length],
+      borderWidth: 1.5,
+    }))
+    return { points: pts, dates: lblDates, datasets: ds }
+  }, [data, type, showTrimestre])
 
   useEffect(() => {
     if (!canvasRef.current || !points.length || !datasets.length) return
     if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null }
+
     chartRef.current = new window.Chart(canvasRef.current, {
       type: 'bar',
       data: { labels: points, datasets },
       options: {
         responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { display: false }, tooltip: { mode:'index', intersect:false, callbacks: { label: i => `${i.dataset.label} : ${i.raw??'—'} UFC` } } },
-        scales: {
-          x: { ticks: { font:{size:11}, autoSkip:false, maxRotation:0, color:'#888780' }, grid: { color:'#e2e8f018' } },
-          y: { min:0, ticks: { font:{size:11}, color:'#888780' }, grid: { color:'#e2e8f018' } }
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            mode: 'index', intersect: false,
+            callbacks: { label: i => `${i.dataset.label} : ${i.raw ?? '—'} UFC` }
+          }
         },
-        layout: { padding: { right: 55 } }
+        scales: {
+          x: {
+            ticks: { font:{size:11}, autoSkip:false, maxRotation:0, color:'#888780' },
+            grid: { color:'#e2e8f018' }
+          },
+          y: { min:0, ticks:{ font:{size:11}, color:'#888780' }, grid:{ color:'#e2e8f018' } }
+        },
+        layout: { padding:{ right:65, top:8 } }
       },
-      plugins: [makeRefPlugin(alerte, action, false), makeValsPlugin(alerte, action, false)]
+      plugins: [
+        makeRefPlugin(norme, alerte, action),
+        makeValsPlugin(alerte, action, showTrimestre)
+      ]
     })
     return () => { if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null } }
-  }, [points, datasets, alerte, action])
+  }, [points, datasets, norme, alerte, action, showTrimestre])
 
   if (!points.length) return null
 
@@ -132,35 +141,43 @@ function ChartVue1({ salle, data, type, alerte, action, classe }) {
     <div className="card p-5 mb-4">
       <div className="flex items-center justify-between mb-3">
         <div className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide">{salle}</div>
-        <span className="text-xs font-medium px-2 py-0.5 rounded" style={{ background: CLASSE_BG[classe]||'#f5f5f5', color: CLASSE_TXT[classe]||'#333' }}>
-          Classe {classe}
-        </span>
-      </div>
-      <div className="flex flex-wrap gap-2 mb-3">
-        {datasets.map((ds, i) => (
-          <span key={i} className="flex items-center gap-1 text-xs text-gray-500">
-            <span className="w-2.5 h-2.5 rounded-sm inline-block flex-shrink-0" style={{ background: ds.borderColor }}/>
-            {ds.label}
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-medium px-2 py-0.5 rounded" style={{ background:CLASSE_BG[classe]||'#f5f5f5', color:CLASSE_TXT[classe]||'#333' }}>
+            Classe {classe}
           </span>
-        ))}
+          <span className="text-xs text-gray-400">{points.length} points</span>
+        </div>
       </div>
-      <div style={{ position:'relative', width:'100%', height: Math.max(220, points.length * 30 + 80) }}>
+
+      {/* Dates sur axe X si trimestre */}
+      {showTrimestre && datasets.length > 0 && (
+        <div className="flex flex-wrap gap-2 mb-2">
+          {datasets.map((ds, i) => (
+            <span key={i} className="flex items-center gap-1 text-xs text-gray-500">
+              <span className="w-2.5 h-2.5 rounded-sm inline-block flex-shrink-0" style={{ background: ds.borderColor }}/>
+              {ds.label}
+            </span>
+          ))}
+        </div>
+      )}
+
+      <div style={{ position:'relative', width:'100%', height: Math.max(220, points.length * 28 + 80) }}>
         <canvas ref={canvasRef}/>
       </div>
     </div>
   )
 }
 
-// ── Composant graphique Vue 3 : un graphique par point ────────────────────
-function ChartVue3Point({ point, data, type, alerte, action, classe, chartType }) {
+// ── Vue 3 : un graphique par point ─────────────────────────────────────────
+function ChartVue3Point({ point, data, type, norme, alerte, action, classe, chartType, showTrimestre }) {
   const canvasRef = useRef(null)
   const chartRef  = useRef(null)
 
   const mesures = useMemo(() => {
     return data
-      .filter(c => c.point === point && c.type_controle === type)
-      .sort((a, b) => a.date_controle.localeCompare(b.date_controle))
-      .map(c => { const [y,m,j]=c.date_controle.split('-'); return { label:`${j}/${m}`, val:c.germes } })
+      .filter(c => c.point===point && c.type_controle===type)
+      .sort((a,b) => a.date_controle.localeCompare(b.date_controle))
+      .map(c => ({ iso: c.date_controle, label: fmtDate(c.date_controle), val: c.germes }))
   }, [data, point, type])
 
   useEffect(() => {
@@ -168,7 +185,10 @@ function ChartVue3Point({ point, data, type, alerte, action, classe, chartType }
     if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null }
 
     const isCourbe = chartType === 'line'
-    const colors = mesures.map(m => m.val>=action?'#dc262699':m.val>=alerte?'#d9770699':'#378ADD99')
+    const vals = mesures.map(m => m.val)
+    const maxVal = Math.max(...vals, alerte || 0, action || 0)
+
+    const colors  = mesures.map(m => m.val>=action?'#dc262699':m.val>=alerte?'#d9770699':'#378ADD99')
     const borders = mesures.map(m => m.val>=action?'#dc2626':m.val>=alerte?'#d97706':'#185FA5')
 
     chartRef.current = new window.Chart(canvasRef.current, {
@@ -177,29 +197,50 @@ function ChartVue3Point({ point, data, type, alerte, action, classe, chartType }
         labels: mesures.map(m => m.label),
         datasets: [{
           label: 'UFC',
-          data: mesures.map(m => m.val),
+          data: vals,
           backgroundColor: isCourbe ? '#378ADD22' : colors,
-          borderColor: isCourbe ? '#378ADD' : borders,
+          borderColor: isCourbe ? borders : borders,
           borderWidth: isCourbe ? 2 : 1.5,
           pointRadius: isCourbe ? 4 : 0,
           pointBackgroundColor: isCourbe ? borders : undefined,
-          tension: 0.35,
+          tension: isCourbe ? 0.35 : 0,
           fill: isCourbe,
+          spanGaps: false, // ne relie pas les valeurs manquantes
         }]
       },
       options: {
         responsive: true, maintainAspectRatio: false,
-        plugins: { legend:{ display:false }, tooltip:{ callbacks:{ label:i=>`${i.raw} UFC` } } },
-        scales: {
-          x: { ticks:{ font:{size:10}, autoSkip:false, maxRotation:45, color:'#888780' }, grid:{ color:'#e2e8f018' } },
-          y: { min:0, ticks:{ font:{size:10}, color:'#888780' }, grid:{ color:'#e2e8f018' } }
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: i => `${i.raw} UFC` } }
         },
-        layout: { padding:{ right:55, top:16 } }
+        scales: {
+          x: {
+            ticks: {
+              font: { size: 10 },
+              autoSkip: mesures.length > 12,
+              maxRotation: 45,
+              color: '#888780'
+            },
+            grid: { color: '#e2e8f018' }
+          },
+          y: {
+            min: 0,
+            // Ne pas étendre l'axe au-delà des données + petite marge
+            suggestedMax: Math.max(...vals) * 1.25 + 2,
+            ticks: { font:{size:10}, color:'#888780' },
+            grid: { color:'#e2e8f018' }
+          }
+        },
+        layout: { padding: { right: 65, top: 16 } }
       },
-      plugins: [makeRefPlugin(alerte, action, false), makeValsPlugin(alerte, action, false)]
+      plugins: [
+        makeRefPlugin(norme, alerte, action),
+        makeValsPlugin(alerte, action, showTrimestre)
+      ]
     })
     return () => { if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null } }
-  }, [mesures, alerte, action, chartType])
+  }, [mesures, norme, alerte, action, chartType, showTrimestre])
 
   if (!mesures.length) return null
 
@@ -212,7 +253,7 @@ function ChartVue3Point({ point, data, type, alerte, action, classe, chartType }
           <span className="text-xs text-gray-400">{mesures.length} mesures</span>
         </div>
       </div>
-      <div style={{ position:'relative', width:'100%', height:180 }}>
+      <div style={{ position:'relative', width:'100%', height: 200 }}>
         <canvas ref={canvasRef}/>
       </div>
     </div>
@@ -221,21 +262,20 @@ function ChartVue3Point({ point, data, type, alerte, action, classe, chartType }
 
 // ── Page principale ────────────────────────────────────────────────────────
 export default function PointsParSalle() {
-  const [zones,    setZones]    = useState([])
-  const [salles,   setSalles]   = useState([])
-  const [normes,   setNormes]   = useState([])
-  const [controles,setControles]= useState([])
-  const [loading,  setLoading]  = useState(true)
+  const [zones,     setZones]     = useState([])
+  const [salles,    setSalles]    = useState([])
+  const [normes,    setNormes]    = useState([])
+  const [controles, setControles] = useState([])
+  const [loading,   setLoading]   = useState(true)
   const [loadingData, setLoadingData] = useState(false)
 
-  const [selZone,   setSelZone]   = useState(null)
-  const [selType,   setSelType]   = useState('ACTIF')
-  const [selClasse, setSelClasse] = useState('ALL')
-  const [selPeriode,setSelPeriode]= useState('ALL')
-  const [selVue,    setSelVue]    = useState('1')       // '1' | '3'
-  const [selChart3, setSelChart3] = useState('bar')     // 'bar' | 'line'
+  const [selZone,    setSelZone]    = useState(null)
+  const [selType,    setSelType]    = useState('ACTIF')
+  const [selClasse,  setSelClasse]  = useState('ALL')
+  const [selPeriode, setSelPeriode] = useState('ALL')
+  const [selVue,     setSelVue]     = useState('1')
+  const [selChart3,  setSelChart3]  = useState('bar')
 
-  // Charger Chart.js
   useEffect(() => {
     if (window.Chart) return
     const s = document.createElement('script')
@@ -243,7 +283,6 @@ export default function PointsParSalle() {
     document.head.appendChild(s)
   }, [])
 
-  // Charger zones, salles, normes
   useEffect(() => {
     async function load() {
       const [z, s, n] = await Promise.all([
@@ -260,7 +299,6 @@ export default function PointsParSalle() {
     load()
   }, [])
 
-  // Charger contrôles quand zone change
   useEffect(() => {
     if (!selZone || !zones.length) return
     const zoneObj = zones.find(z => z.code === selZone)
@@ -288,55 +326,55 @@ export default function PointsParSalle() {
 
   const normesMap = useMemo(() => {
     const map = {}
-    normes.forEach(n => { map[`${n.zones?.code}_${n.type_controle}`] = n })
+    normes.forEach(n => {
+      map[`${n.zones?.code}_${n.type_controle}`] = n
+    })
     return map
   }, [normes])
 
-  // Données filtrées par période
   const dataFiltered = useMemo(() => {
     if (selPeriode === 'ALL') return controles
     const [debut, fin] = TRIMESTRES[selPeriode]
     return controles.filter(c => c.date_controle >= debut && c.date_controle <= fin)
   }, [controles, selPeriode])
 
-  // Salles de la zone
-  const sallesZone = useMemo(() => {
-    return salles.filter(s => s.zones?.code === selZone)
-  }, [salles, selZone])
+  const sallesZone = useMemo(() =>
+    salles.filter(s => s.zones?.code === selZone)
+  , [salles, selZone])
 
-  // Classe d'une salle depuis les contrôles
   function getClasseSalle(salleId) {
-    const classes = [...new Set(controles.filter(c => c.salle_id === salleId).map(c => c.classe).filter(Boolean))]
-    return classes[0] || '?'
+    const cls = [...new Set(controles.filter(c => c.salle_id===salleId).map(c => c.classe).filter(Boolean))]
+    return cls[0] || '?'
   }
 
-  // Salles filtrées par classe sélectionnée
+  const classesDispos = useMemo(() =>
+    [...new Set(controles.map(c => c.classe).filter(Boolean))].sort()
+  , [controles])
+
   const sallesFiltrees = useMemo(() => {
     if (selClasse === 'ALL') return sallesZone
     return sallesZone.filter(s => getClasseSalle(s.id) === selClasse)
   }, [sallesZone, selClasse, controles])
 
-  // Classes disponibles
-  const classesDispos = useMemo(() =>
-    [...new Set(controles.map(c => c.classe).filter(Boolean))].sort()
-  , [controles])
-
-  // Normes courantes
-  const normesCourantes = normesMap[`${selZone}_${selType}`] || { alerte: 0, action: 9999 }
-
-  // Points d'une salle filtrés par type
-  function getPoints(salleId) {
-    const prefix = selType === 'ACTIF' ? 'A' : selType === 'PASSIF' ? 'P' : 'S'
-    const data = dataFiltered.filter(c => c.salle_id === salleId && c.type_controle === selType)
-    return [...new Set(data.map(c => c.point))].filter(p => p.startsWith(prefix))
-      .sort((a, b) => { const na=parseInt(a.slice(1)),nb=parseInt(b.slice(1)); return isNaN(na)||isNaN(nb)?a.localeCompare(b):na-nb })
+  function getNormes(classeOverride) {
+    // Essai avec classe spécifique, fallback sans classe
+    const cl = classeOverride || ''
+    return normesMap[`${selZone}_${cl}_${selType}`]
+        || normesMap[`${selZone}_${selType}`]
+        || { norme: null, alerte: 0, action: 9999, unite: 'UFC' }
   }
 
-  if (loading) return (
-    <div className="flex items-center justify-center h-64">
-      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand"/>
-    </div>
-  )
+  function getPoints(salleId) {
+    const prefix = selType==='ACTIF'?'A':selType==='PASSIF'?'P':'S'
+    return [...new Set(dataFiltered.filter(c=>c.salle_id===salleId&&c.type_controle===selType).map(c=>c.point))]
+      .filter(p=>p.startsWith(prefix))
+      .sort((a,b)=>{ const na=parseInt(a.slice(1)),nb=parseInt(b.slice(1)); return isNaN(na)||isNaN(nb)?a.localeCompare(b):na-nb })
+  }
+
+  const showTrimestre = selPeriode !== 'ALL'
+  const normesCourantes = getNormes()
+
+  if (loading) return <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand"/></div>
 
   return (
     <div className="space-y-6">
@@ -349,7 +387,7 @@ export default function PointsParSalle() {
       <div className="flex gap-2 flex-wrap">
         {zones.map(z => (
           <button key={z.code} onClick={() => { setSelZone(z.code); setSelClasse('ALL') }}
-            style={{ borderColor: selZone===z.code?z.color:'transparent', background: selZone===z.code?z.color:undefined }}
+            style={{ borderColor:selZone===z.code?z.color:'transparent', background:selZone===z.code?z.color:undefined }}
             className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold border-2 transition-all
               ${selZone===z.code?'text-white':'text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:border-gray-300'}`}>
             {z.icon} {z.label}
@@ -366,29 +404,25 @@ export default function PointsParSalle() {
             <div className="flex gap-1">
               {[['1','📊 Vue globale'],['3','🔍 Vue par point']].map(([v,l]) => (
                 <button key={v} onClick={() => setSelVue(v)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
-                    selVue===v?'bg-purple-600 text-white':'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200'
-                  }`}>{l}</button>
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${selVue===v?'bg-purple-600 text-white':'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200'}`}>{l}</button>
               ))}
             </div>
           </div>
 
-          {/* Type graphique (Vue 3 uniquement) */}
+          {/* Graphique Vue 3 */}
           {selVue === '3' && (
             <div>
               <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1.5">Graphique</label>
               <div className="flex gap-1">
                 {[['bar','▊ Barres'],['line','〜 Courbe']].map(([t,l]) => (
                   <button key={t} onClick={() => setSelChart3(t)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
-                      selChart3===t?'bg-brand text-white':'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200'
-                    }`}>{l}</button>
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${selChart3===t?'bg-brand text-white':'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200'}`}>{l}</button>
                 ))}
               </div>
             </div>
           )}
 
-          {/* Type contrôle */}
+          {/* Type */}
           <div>
             <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1.5">Type</label>
             <select value={selType} onChange={e => setSelType(e.target.value)} className="input py-1.5 text-sm w-36">
@@ -402,11 +436,11 @@ export default function PointsParSalle() {
           <div>
             <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1.5">Classe</label>
             <div className="flex gap-1">
-              {['ALL', ...classesDispos].map(c => (
+              {['ALL',...classesDispos].map(c => (
                 <button key={c} onClick={() => setSelClasse(c)}
-                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-colors ${
-                    selClasse===c?'bg-teal-600 text-white':'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200'
-                  }`}>{c==='ALL'?'Toutes':`Cl. ${c}`}</button>
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-colors ${selClasse===c?'bg-teal-600 text-white':'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200'}`}>
+                  {c==='ALL'?'Toutes':`Cl. ${c}`}
+                </button>
               ))}
             </div>
           </div>
@@ -417,9 +451,9 @@ export default function PointsParSalle() {
             <div className="flex gap-1">
               {['ALL','T1','T2','T3','T4'].map(t => (
                 <button key={t} onClick={() => setSelPeriode(t)}
-                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-colors ${
-                    selPeriode===t?'bg-navy text-white':'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200'
-                  }`}>{t==='ALL'?"Année":t}</button>
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-colors ${selPeriode===t?'bg-navy text-white':'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200'}`}>
+                  {t==='ALL'?"Année":t}
+                </button>
               ))}
             </div>
           </div>
@@ -429,34 +463,40 @@ export default function PointsParSalle() {
           </div>
         </div>
 
-        {/* Normes */}
-        <div className="flex gap-4 pt-1">
+        {/* Légende limites */}
+        <div className="flex gap-5 pt-1 flex-wrap">
+          {normesCourantes.norme !== null && (
+            <span className="flex items-center gap-2 text-xs text-blue-600 dark:text-blue-400 font-medium">
+              <span className="w-5 border-t-2 border-dashed border-blue-600 inline-block"/>
+              Norme : {normesCourantes.norme} {normesCourantes.unite}
+            </span>
+          )}
           <span className="flex items-center gap-2 text-xs text-amber-600 dark:text-amber-400">
             <span className="w-5 border-t-2 border-dashed border-amber-500 inline-block"/>
-            Alerte : {normesCourantes.alerte} UFC
+            Alerte : {normesCourantes.alerte} {normesCourantes.unite}
           </span>
           <span className="flex items-center gap-2 text-xs text-red-600 dark:text-red-400">
             <span className="w-5 border-t-2 border-dashed border-red-500 inline-block"/>
-            Action : {normesCourantes.action} UFC
+            Action : {normesCourantes.action} {normesCourantes.unite}
           </span>
         </div>
 
         {loadingData && <div className="text-xs text-brand animate-pulse">Chargement des données...</div>}
       </div>
 
-      {/* Graphiques */}
+      {/* Message vide */}
       {!loadingData && sallesFiltrees.length === 0 && (
         <div className="card p-10 text-center text-gray-400">
           Aucune salle{selClasse!=='ALL'?` en Classe ${selClasse}`:''} pour cette zone.
         </div>
       )}
 
+      {/* Graphiques */}
       {!loadingData && sallesFiltrees.map(salle => {
         const classeSalle = getClasseSalle(salle.id)
-        const dataSalle = dataFiltered.filter(c => c.salle_id === salle.id)
+        const dataSalle   = dataFiltered.filter(c => c.salle_id === salle.id)
         if (!dataSalle.length) return null
-
-        const normeSalle = normesMap[`${selZone}_${selType}`] || normesCourantes
+        const n = getNormes(classeSalle)
 
         if (selVue === '1') {
           return (
@@ -465,14 +505,15 @@ export default function PointsParSalle() {
               salle={salle.label}
               data={dataSalle}
               type={selType}
-              alerte={normeSalle?.alerte || 0}
-              action={normeSalle?.action || 9999}
+              norme={n.norme}
+              alerte={n.alerte}
+              action={n.action}
               classe={classeSalle}
+              showTrimestre={showTrimestre}
             />
           )
         }
 
-        // Vue 3 : un graphique par point
         const points = getPoints(salle.id)
         if (!points.length) return null
 
@@ -491,10 +532,12 @@ export default function PointsParSalle() {
                 point={point}
                 data={dataSalle}
                 type={selType}
-                alerte={normeSalle?.alerte || 0}
-                action={normeSalle?.action || 9999}
+                norme={n.norme}
+                alerte={n.alerte}
+                action={n.action}
                 classe={classeSalle}
                 chartType={selChart3}
+                showTrimestre={showTrimestre}
               />
             ))}
           </div>
