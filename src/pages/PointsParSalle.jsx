@@ -75,87 +75,119 @@ function makeValsPlugin(alerte, action, showAll = false) {
   }
 }
 
-// ── Vue 1 : barres verticales groupées par point ──────────────────────────
-function ChartVue1({ salle, data, type, norme, alerte, action, classe, periodeLabel, showTrimestre }) {
+// ── Vue 1 : Point+Dates groupés sur axe X ─────────────────────────────────
+function ChartVue1({ salle, data, type, norme, alerte, action, classe }) {
   const canvasRef = useRef(null)
   const chartRef  = useRef(null)
 
-  const { points, dates, datasets } = useMemo(() => {
+  const chartData = useMemo(() => {
     const prefix = type === 'ACTIF' ? 'A' : type === 'PASSIF' ? 'P' : 'S'
-    const pts = [...new Set(data.filter(c=>c.type_controle===type).map(c=>c.point))]
+    const pts = [...new Set(data.filter(c => c.type_controle === type).map(c => c.point))]
       .filter(p => p.startsWith(prefix))
-      .sort((a,b) => { const na=parseInt(a.slice(1)),nb=parseInt(b.slice(1)); return isNaN(na)||isNaN(nb)?a.localeCompare(b):na-nb })
+      .sort((a, b) => { const na = parseInt(a.slice(1)), nb = parseInt(b.slice(1)); return isNaN(na)||isNaN(nb) ? a.localeCompare(b) : na - nb })
+    const isos = [...new Set(data.filter(c => c.type_controle === type).map(c => c.date_controle))].sort()
 
-    const isos = [...new Set(data.filter(c=>c.type_controle===type).map(c=>c.date_controle))].sort()
-
-    // Labels = dates sur l'axe X, datasets = un par point
-    const ds = pts.map((p, i) => ({
-      label: p,
-      data: isos.map(iso => {
-        const v = data.find(c => c.date_controle===iso && c.point===p && c.type_controle===type)
-        return v !== undefined ? v.germes : null
-      }),
-      backgroundColor: PALETTE[i % PALETTE.length] + 'bb',
-      borderColor: PALETTE[i % PALETTE.length],
-      borderWidth: 1.5,
-    }))
-    return { points: pts, dates: isos, datasets: ds }
-  }, [data, type, showTrimestre])
+    const labels = [], vals = [], bgColors = [], borderColors = [], pointGroups = []
+    pts.forEach((pt, pi) => {
+      const startIdx = labels.length
+      isos.forEach(iso => {
+        const v = data.find(c => c.date_controle === iso && c.point === pt && c.type_controle === type)
+        const val = v !== undefined ? v.germes : null
+        labels.push(fmtDateShort(iso))
+        vals.push(val)
+        const nc = val !== null && val >= action ? '#dc2626' : val !== null && val >= alerte ? '#d97706' : null
+        bgColors.push(nc ? nc + '99' : '#378ADD99')
+        borderColors.push(nc || '#185FA5')
+      })
+      pointGroups.push({ pt, startIdx, count: isos.length })
+      if (pi < pts.length - 1) {
+        labels.push('')
+        vals.push(null)
+        bgColors.push('transparent')
+        borderColors.push('transparent')
+      }
+    })
+    return { labels, vals, bgColors, borderColors, pointGroups, pts, isos }
+  }, [data, type, alerte, action])
 
   useEffect(() => {
-    if (!canvasRef.current || !points.length || !datasets.length) return
+    if (!canvasRef.current || !chartData.pts.length) return
     if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null }
+    const { labels, vals, bgColors, borderColors, pointGroups, isos } = chartData
 
     chartRef.current = new window.Chart(canvasRef.current, {
       type: 'bar',
-      data: { labels: dates.map(d => fmtDate(d)), datasets },
+      data: {
+        labels,
+        datasets: [{ label: 'UFC', data: vals, backgroundColor: bgColors, borderColor: borderColors, borderWidth: 1.5, borderSkipped: false }]
+      },
       options: {
         responsive: true, maintainAspectRatio: false,
         plugins: {
-          legend: {
-            display: true,
-            position: 'top',
-            labels: { boxWidth: 10, boxHeight: 10, font: { size: 11 }, padding: 8 }
-          },
+          legend: { display: false },
           tooltip: {
-            mode: 'index', intersect: false,
-            callbacks: { label: i => `${i.dataset.label} : ${i.raw ?? '—'} UFC` }
+            callbacks: {
+              title: items => {
+                const idx = items[0].dataIndex
+                const pg = pointGroups.find(g => idx >= g.startIdx && idx < g.startIdx + g.count)
+                const iso = isos[idx - (pg ? pg.startIdx : 0)]
+                return pg && iso ? `${pg.pt} — ${fmtDate(iso)}` : ''
+              },
+              label: i => i.raw !== null ? `${i.raw} UFC` : '—'
+            }
           }
         },
         scales: {
-          x: {
-            ticks: { font:{size:10}, autoSkip:false, maxRotation:45, color:'#888780' },
-            grid: { color:'#e2e8f018' }
-          },
-          y: { min:0, ticks:{ font:{size:11}, color:'#888780' }, grid:{ color:'#e2e8f018' } }
+          x: { ticks: { font: { size: 10 }, autoSkip: false, maxRotation: 45, color: '#888780' }, grid: { color: '#e2e8f014' } },
+          y: { min: 0, ticks: { font: { size: 10 }, color: '#888780' }, grid: { color: '#e2e8f018' } }
         },
-        layout: { padding:{ right:65, top:8 } }
+        layout: { padding: { right: 65, top: 12, bottom: 28 } }
       },
       plugins: [
         makeRefPlugin(norme, alerte, action),
-        makeValsPlugin(alerte, action, showTrimestre)
+        makeValsPlugin(alerte, action, true),
+        {
+          id: 'pointLabels',
+          afterDraw(chart) {
+            const { ctx: c, scales: { x, y } } = chart
+            c.save()
+            pointGroups.forEach(({ pt, startIdx, count }) => {
+              const meta = chart.getDatasetMeta(0)
+              const first = meta.data[startIdx], last = meta.data[startIdx + count - 1]
+              if (!first || !last) return
+              const midX = (first.x + last.x) / 2
+              c.font = 'bold 11px sans-serif'; c.fillStyle = '#185FA5'; c.textAlign = 'center'
+              c.fillText(pt, midX, y.bottom + 26)
+              if (startIdx > 0) {
+                const sep = meta.data[startIdx - 1]
+                if (sep) {
+                  const sepX = sep.x + (sep.width || 0) / 2 + 4
+                  c.strokeStyle = '#d1d5db'; c.lineWidth = 1; c.setLineDash([3, 3])
+                  c.beginPath(); c.moveTo(sepX, y.top); c.lineTo(sepX, y.bottom + 14); c.stroke()
+                  c.setLineDash([])
+                }
+              }
+            })
+            c.restore()
+          }
+        }
       ]
     })
     return () => { if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null } }
-  }, [points, datasets, norme, alerte, action, showTrimestre])
+  }, [chartData, norme, alerte, action])
 
-  if (!points.length) return null
+  if (!chartData.pts.length) return null
 
   return (
     <div className="card p-5 mb-4">
       <div className="flex items-center justify-between mb-3">
         <div className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide">{salle}</div>
         <div className="flex items-center gap-2">
-          <span className="text-xs font-medium px-2 py-0.5 rounded" style={{ background:CLASSE_BG[classe]||'#f5f5f5', color:CLASSE_TXT[classe]||'#333' }}>
-            Classe {classe}
-          </span>
-          <span className="text-xs text-gray-400">{points.length} points</span>
+          <span className="text-xs font-medium px-2 py-0.5 rounded" style={{ background: CLASSE_BG[classe]||'#f5f5f5', color: CLASSE_TXT[classe]||'#333' }}>Classe {classe}</span>
+          <span className="text-xs text-gray-400">{chartData.pts.length} points · {chartData.isos.length} dates</span>
         </div>
       </div>
-
-
-
-      <div style={{ position:'relative', width:'100%', height: Math.max(220, points.length * 28 + 80) }}>
+      <div style={{ position: 'relative', width: '100%', height: Math.max(260, chartData.labels.length * 20 + 80) }}>
         <canvas ref={canvasRef}/>
       </div>
     </div>
@@ -493,6 +525,17 @@ export default function PointsParSalle() {
         const n = getNormes(classeSalle)
 
         if (selVue === '1') {
+          if (!showTrimestre) return (
+            <div key={salle.id} className="card p-6 mb-4 border-l-4 border-l-amber-400">
+              <div className="flex items-center gap-3">
+                <span className="text-amber-500 text-lg">⚠️</span>
+                <div>
+                  <div className="font-semibold text-gray-800 dark:text-white text-sm">{salle.label}</div>
+                  <div className="text-xs text-gray-500 mt-0.5">La vue globale est disponible par trimestre uniquement. Sélectionne T1, T2, T3 ou T4.</div>
+                </div>
+              </div>
+            </div>
+          )
           return (
             <ChartVue1
               key={salle.id}
@@ -503,7 +546,6 @@ export default function PointsParSalle() {
               alerte={n.alerte}
               action={n.action}
               classe={classeSalle}
-              showTrimestre={showTrimestre}
             />
           )
         }
