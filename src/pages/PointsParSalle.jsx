@@ -87,19 +87,19 @@ function ChartVue1({ salle, data, type, norme, alerte, action, classe, periodeLa
       .sort((a,b) => { const na=parseInt(a.slice(1)),nb=parseInt(b.slice(1)); return isNaN(na)||isNaN(nb)?a.localeCompare(b):na-nb })
 
     const isos = [...new Set(data.filter(c=>c.type_controle===type).map(c=>c.date_controle))].sort()
-    const lblDates = isos.map(d => showTrimestre ? fmtDateShort(d) : '')
 
-    const ds = isos.map((iso, i) => ({
-      label: fmtDate(iso),
-      data: pts.map(p => {
+    // Labels = dates sur l'axe X, datasets = un par point
+    const ds = pts.map((p, i) => ({
+      label: p,
+      data: isos.map(iso => {
         const v = data.find(c => c.date_controle===iso && c.point===p && c.type_controle===type)
-        return v ? v.germes : null
+        return v !== undefined ? v.germes : null
       }),
       backgroundColor: PALETTE[i % PALETTE.length] + 'bb',
       borderColor: PALETTE[i % PALETTE.length],
       borderWidth: 1.5,
     }))
-    return { points: pts, dates: lblDates, datasets: ds }
+    return { points: pts, dates: isos, datasets: ds }
   }, [data, type, showTrimestre])
 
   useEffect(() => {
@@ -108,11 +108,15 @@ function ChartVue1({ salle, data, type, norme, alerte, action, classe, periodeLa
 
     chartRef.current = new window.Chart(canvasRef.current, {
       type: 'bar',
-      data: { labels: points, datasets },
+      data: { labels: dates.map(d => fmtDate(d)), datasets },
       options: {
         responsive: true, maintainAspectRatio: false,
         plugins: {
-          legend: { display: false },
+          legend: {
+            display: true,
+            position: 'top',
+            labels: { boxWidth: 10, boxHeight: 10, font: { size: 11 }, padding: 8 }
+          },
           tooltip: {
             mode: 'index', intersect: false,
             callbacks: { label: i => `${i.dataset.label} : ${i.raw ?? '—'} UFC` }
@@ -120,7 +124,7 @@ function ChartVue1({ salle, data, type, norme, alerte, action, classe, periodeLa
         },
         scales: {
           x: {
-            ticks: { font:{size:11}, autoSkip:false, maxRotation:0, color:'#888780' },
+            ticks: { font:{size:10}, autoSkip:false, maxRotation:45, color:'#888780' },
             grid: { color:'#e2e8f018' }
           },
           y: { min:0, ticks:{ font:{size:11}, color:'#888780' }, grid:{ color:'#e2e8f018' } }
@@ -149,17 +153,7 @@ function ChartVue1({ salle, data, type, norme, alerte, action, classe, periodeLa
         </div>
       </div>
 
-      {/* Dates sur axe X si trimestre */}
-      {showTrimestre && datasets.length > 0 && (
-        <div className="flex flex-wrap gap-2 mb-2">
-          {datasets.map((ds, i) => (
-            <span key={i} className="flex items-center gap-1 text-xs text-gray-500">
-              <span className="w-2.5 h-2.5 rounded-sm inline-block flex-shrink-0" style={{ background: ds.borderColor }}/>
-              {ds.label}
-            </span>
-          ))}
-        </div>
-      )}
+
 
       <div style={{ position:'relative', width:'100%', height: Math.max(220, points.length * 28 + 80) }}>
         <canvas ref={canvasRef}/>
