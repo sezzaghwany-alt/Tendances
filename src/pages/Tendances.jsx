@@ -108,9 +108,20 @@ export default function Tendances() {
 
   const normesMap = useMemo(() => {
     const map = {}
-    normes.forEach(n => { map[`${n.zones?.code}_${n.type_controle}`] = n })
+    normes.forEach(n => {
+      // clé avec classe pour zones multi-classes (ex: LABO_MICRO)
+      map[`${n.zones?.code}_${n.type_controle}`] = n          // fallback sans classe
+      if (n.classe) map[`${n.zones?.code}_${n.classe}_${n.type_controle}`] = n
+    })
     return map
   }, [normes])
+
+  // Norme applicable selon classe filtrée
+  function getNorme(type) {
+    if (filtreClasse !== 'ALL')
+      return normesMap[`${selectedZone}_${filtreClasse}_${type}`] || normesMap[`${selectedZone}_${type}`]
+    return normesMap[`${selectedZone}_${type}`]
+  }
 
   // Types à afficher (filtrés si filtreType !== ALL)
   const typesAffiches = filtreType === 'ALL' ? TYPES : [filtreType]
@@ -141,7 +152,9 @@ export default function Tendances() {
   const statsAndInterpret = useMemo(() => {
     const result = {}
     TYPES.forEach(type => {
-      const n = normesMap[`${selectedZone}_${type}`]
+      const n = filtreClasse !== 'ALL'
+        ? normesMap[`${selectedZone}_${filtreClasse}_${type}`] || normesMap[`${selectedZone}_${type}`]
+        : normesMap[`${selectedZone}_${type}`]
       const values = controles.filter(c => c.type_controle === type).map(c => c.germes)
       if (!values.length || !n) return
       result[type] = {
@@ -151,7 +164,7 @@ export default function Tendances() {
       }
     })
     return result
-  }, [controles, selectedZone, normesMap])
+  }, [controles, selectedZone, normesMap, filtreClasse])
 
   const selectedZoneObj = zones.find(z => z.code === selectedZone)
 
@@ -238,16 +251,15 @@ export default function Tendances() {
               <option value="SURFACE">🧴 Surface</option>
             </select>
           </div>
-          {/* Classe */}
-          {classesDispos.length > 1 && (
-            <div>
-              <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Classe</label>
-              <select value={filtreClasse} onChange={e => setFiltreClasse(e.target.value)} className="input py-1.5 text-sm w-28">
-                <option value="ALL">Toutes</option>
-                {classesDispos.map(c => <option key={c} value={c}>Classe {c}</option>)}
-              </select>
-            </div>
-          )}
+          {/* Classe — toujours visible */}
+          <div>
+            <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Classe</label>
+            <select value={filtreClasse} onChange={e => { setFiltreClasse(e.target.value) }} className="input py-1.5 text-sm w-28">
+              <option value="ALL">Toutes</option>
+              {['A','B','C','D'].map(c => <option key={c} value={c}>Classe {c}</option>)}
+            </select>
+            {filtreClasse !== 'ALL' && <div className="text-[9px] text-brand mt-0.5">{controles.filter(c=>c.classe===filtreClasse).length} mesures</div>}
+          </div>
           {/* Point */}
           <div>
             <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Point</label>
