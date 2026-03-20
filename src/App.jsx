@@ -11,6 +11,7 @@ import Alertes from '@/pages/Alertes'
 import Saisie from '@/pages/Saisie'
 import AuditTrail from '@/pages/AuditTrail'
 import Admin from '@/pages/Admin'
+import PointsParSalle from '@/pages/PointsParSalle'
 
 function Layout() {
   const [alertCount, setAlertCount] = useState(0)
@@ -39,6 +40,7 @@ function Layout() {
         <Routes>
           <Route path="/"          element={<Dashboard />} />
           <Route path="/tendances" element={<Tendances />} />
+          <Route path="/points"     element={<PointsParSalle />} />
           <Route path="/alertes"   element={<Alertes />} />
           <Route path="/saisie"    element={<ProtectedRoute requireOperateur><Saisie /></ProtectedRoute>} />
           <Route path="/audit"     element={<ProtectedRoute requireAdmin><AuditTrail /></ProtectedRoute>} />
