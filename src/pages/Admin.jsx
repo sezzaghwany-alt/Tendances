@@ -1,8 +1,179 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { Plus, Trash2, Save, UserPlus, Mail } from 'lucide-react'
+import { Plus, Trash2, Save, UserPlus, Mail, Download, Database } from 'lucide-react'
 
 
+
+
+// ── Backup ────────────────────────────────────────────────────────────────────
+function BackupTab() {
+  const [loading, setLoading] = useState(false)
+  const [progress, setProgress] = useState('')
+  const [lastBackup, setLastBackup] = useState(null)
+  const [stats, setStats] = useState(null)
+
+  const TABLES = [
+    'controles', 'controles_personnel', 'zones', 'salles',
+    'normes', 'points_controle', 'profiles', 'audit_trail'
+  ]
+
+  async function fetchTable(table) {
+    let all = [], offset = 0
+    while (true) {
+      const { data, error } = await supabase
+        .from(table).select('*').range(offset, offset + 999)
+      if (error || !data?.length) break
+      all = [...all, ...data]
+      if (data.length < 1000) break
+      offset += 1000
+    }
+    return all
+  }
+
+  async function doBackup() {
+    setLoading(true)
+    setProgress('Préparation...')
+    const backup = {}
+    const counts = {}
+
+    for (const table of TABLES) {
+      setProgress(`Téléchargement : ${table}...`)
+      const data = await fetchTable(table)
+      backup[table] = data
+      counts[table] = data.length
+    }
+
+    backup._meta = {
+      date: new Date().toISOString(),
+      version: 'EnviroControl v2.0',
+      tables: counts,
+      total: Object.values(counts).reduce((a, b) => a + b, 0)
+    }
+
+    setProgress('Génération du fichier...')
+
+    // Créer le ZIP via JSZip
+    const JSZip = (await import('https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js')).default
+    const zip = new JSZip()
+
+    for (const table of TABLES) {
+      zip.file(`${table}.json`, JSON.stringify(backup[table], null, 2))
+    }
+    zip.file('RECAP.json', JSON.stringify(backup._meta, null, 2))
+
+    const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' })
+
+    // Télécharger
+    const date = new Date().toISOString().slice(0, 16).replace('T', '_').replace(':', 'h')
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url; a.download = `EnviroControl_backup_${date}.zip`
+    a.click(); URL.revokeObjectURL(url)
+
+    // Mémoriser
+    const meta = { date: new Date().toISOString(), counts }
+    setLastBackup(meta)
+    setStats(meta)
+    localStorage.setItem('enviro_last_backup', JSON.stringify(meta))
+    setProgress(''); setLoading(false)
+  }
+
+  useEffect(() => {
+    const saved = localStorage.getItem('enviro_last_backup')
+    if (saved) { try { setLastBackup(JSON.parse(saved)) } catch {} }
+  }, [])
+
+  const lastDate = lastBackup ? new Date(lastBackup.date) : null
+  const daysSince = lastDate ? Math.floor((Date.now() - lastDate) / 86400000) : null
+
+  return (
+    <div className="space-y-6 max-w-2xl">
+      {/* Statut dernière sauvegarde */}
+      <div className={`card p-5 border-l-4 ${
+        daysSince === null ? 'border-l-gray-300' :
+        daysSince <= 3 ? 'border-l-green-400' :
+        daysSince <= 7 ? 'border-l-amber-400' : 'border-l-red-400'
+      }`}>
+        <div className="flex items-center gap-3 mb-3">
+          <Database size={20} className="text-brand"/>
+          <div className="font-bold text-gray-800 dark:text-white">Dernière sauvegarde</div>
+        </div>
+        {lastBackup ? (
+          <div className="space-y-1">
+            <div className="text-sm text-gray-600 dark:text-gray-300">
+              📅 {new Date(lastBackup.date).toLocaleDateString('fr-FR', {
+                weekday:'long', day:'2-digit', month:'long', year:'numeric',
+                hour:'2-digit', minute:'2-digit'
+              })}
+            </div>
+            <div className={`text-sm font-semibold ${
+              daysSince <= 3 ? 'text-green-600' :
+              daysSince <= 7 ? 'text-amber-600' : 'text-red-600'
+            }`}>
+              {daysSince === 0 ? '✅ Sauvegardé aujourd'hui' :
+               daysSince === 1 ? '✅ Sauvegardé hier' :
+               daysSince <= 3 ? `✅ Il y a ${daysSince} jours` :
+               daysSince <= 7 ? `⚠️ Il y a ${daysSince} jours — pensez à sauvegarder` :
+               `⛔ Il y a ${daysSince} jours — sauvegarde urgente !`}
+            </div>
+            {lastBackup.counts && (
+              <div className="flex flex-wrap gap-2 mt-2">
+                {Object.entries(lastBackup.counts).map(([t, n]) => (
+                  <span key={t} className="text-xs bg-gray-100 dark:bg-gray-800 text-gray-500 px-2 py-0.5 rounded font-mono">
+                    {t}: {n}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="text-sm text-gray-400">Aucune sauvegarde enregistrée sur ce navigateur</div>
+        )}
+      </div>
+
+      {/* Bouton sauvegarde */}
+      <div className="card p-5">
+        <div className="font-bold text-gray-800 dark:text-white mb-2 flex items-center gap-2">
+          <Download size={18}/> Sauvegarder maintenant
+        </div>
+        <p className="text-sm text-gray-500 mb-4">
+          Télécharge toutes les données en un fichier ZIP sur votre PC.
+          Copiez ensuite ce fichier vers le dossier réseau partagé.
+        </p>
+
+        {loading ? (
+          <div className="flex items-center gap-3 text-brand text-sm">
+            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-brand"/>
+            {progress}
+          </div>
+        ) : (
+          <button onClick={doBackup}
+            className="btn-primary flex items-center gap-2 text-sm px-6 py-2.5">
+            <Download size={16}/> Télécharger la sauvegarde ZIP
+          </button>
+        )}
+      </div>
+
+      {/* Planning */}
+      <div className="card p-5">
+        <div className="font-bold text-gray-800 dark:text-white mb-3">📅 Planning recommandé</div>
+        <div className="space-y-2 text-sm text-gray-600 dark:text-gray-300">
+          <div className="flex items-center gap-3 p-3 rounded-lg bg-gray-50 dark:bg-gray-800/50">
+            <span className="text-lg">📅</span>
+            <div><div className="font-semibold">Mercredi à 16h45</div><div className="text-xs text-gray-400">Une notification apparaît dans l'application</div></div>
+          </div>
+          <div className="flex items-center gap-3 p-3 rounded-lg bg-gray-50 dark:bg-gray-800/50">
+            <span className="text-lg">📅</span>
+            <div><div className="font-semibold">Vendredi à 16h45</div><div className="text-xs text-gray-400">Une notification apparaît dans l'application</div></div>
+          </div>
+        </div>
+        <p className="text-xs text-gray-400 mt-3">
+          💡 Après le téléchargement, copiez le fichier ZIP vers :\\SERVEUR\Partage\Backups\EnviroControl
+        </p>
+      </div>
+    </div>
+  )
+}
 
 // ── Users ─────────────────────────────────────────────────────────────────────
 function UsersTab() {
@@ -638,6 +809,7 @@ function PointsTab() {
 }
 // ── Page principale ───────────────────────────────────────────────────────────
 const TABS = [
+  { id: 'backup',  label: '💾 Sauvegarde' },
   { id: 'users',   label: '👥 Utilisateurs' },
   { id: 'zones',   label: '🏭 Zones' },
   { id: 'salles',  label: '🚪 Salles' },
@@ -663,6 +835,7 @@ export default function Admin() {
           </button>
         ))}
       </div>
+      {tab === 'backup' && <BackupTab/>}
       {tab === 'users'  && <UsersTab/>}
       {tab === 'zones'  && <ZonesTab/>}
       {tab === 'salles' && <SallesTab/>}
