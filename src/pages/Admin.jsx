@@ -6,118 +6,236 @@ import { Plus, Trash2, Save, UserPlus, Mail } from 'lucide-react'
 
 // ── Users ─────────────────────────────────────────────────────────────────────
 function UsersTab() {
-  const [users, setUsers] = useState([])
+  const [users, setUsers]     = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ full_name: '', email: '', role: 'lecteur', password: '' })
-  const [saving, setSaving] = useState(false)
-  const [success, setSuccess] = useState('')
+  const [editId, setEditId]   = useState(null)
+  const [saving, setSaving]   = useState(false)
+  const [msg, setMsg]         = useState({ text:'', type:'' })
 
-  useEffect(() => {
-    supabase.from('profiles').select('*').order('created_at').then(({ data }) => {
-      setUsers(data || [])
-      setLoading(false)
-    })
-  }, [])
+  const EMPTY = { full_name:'', email:'', role:'lecteur', password:'' }
+  const [form, setForm]       = useState(EMPTY)
+  const [editForm, setEditForm] = useState({})
 
+  function showMsg(text, type='ok') {
+    setMsg({ text, type })
+    setTimeout(() => setMsg({ text:'', type:'' }), 5000)
+  }
+
+  async function loadUsers() {
+    const { data } = await supabase.from('profiles').select('*').order('created_at')
+    setUsers(data || [])
+    setLoading(false)
+  }
+  useEffect(() => { loadUsers() }, [])
+
+  // ── Créer ──
   async function createUser() {
-    if (!form.email || !form.password || !form.full_name) return
+    if (!form.email || !form.password || !form.full_name) return showMsg('Tous les champs sont obligatoires','warn')
     setSaving(true)
-
-    // Créer l'utilisateur via Supabase Auth Admin (nécessite une Edge Function en prod)
-    // En développement, on utilise signUp
-    const { data, error } = await supabase.auth.admin.createUser({
-      email: form.email,
-      password: form.password,
-      email_confirm: true,
+    // Tenter admin.createUser, sinon fallback signUp
+    let userId = null
+    const { data: ad, error: ae } = await supabase.auth.admin.createUser({
+      email: form.email, password: form.password, email_confirm: true,
       user_metadata: { full_name: form.full_name, role: form.role }
     })
-
-    if (error) {
-      // Fallback : signUp classique
+    if (ad?.user) {
+      userId = ad.user.id
+    } else {
       const { data: sd, error: se } = await supabase.auth.signUp({
         email: form.email, password: form.password,
         options: { data: { full_name: form.full_name, role: form.role } }
       })
-      if (se) { setSaving(false); alert(se.message); return }
+      if (se) { setSaving(false); return showMsg(se.message, 'error') }
+      userId = sd?.user?.id
     }
-
-    // Mettre à jour le rôle dans profiles
-    await supabase.from('profiles').update({ role: form.role, full_name: form.full_name }).eq('email', form.email)
-
-    setSuccess(`✅ Compte créé pour ${form.email}. Les identifiants ont été envoyés par mail.`)
-    setForm({ full_name: '', email: '', role: 'lecteur', password: '' })
-    setShowForm(false)
-    setSaving(false)
-    setTimeout(() => setSuccess(''), 5000)
-
-    const { data: updated } = await supabase.from('profiles').select('*').order('created_at')
-    setUsers(updated || [])
+    if (userId) {
+      await supabase.from('profiles').upsert({ id: userId, full_name: form.full_name, email: form.email, role: form.role })
+    }
+    showMsg(`✅ Compte créé pour ${form.email}`)
+    setForm(EMPTY); setShowForm(false); setSaving(false)
+    loadUsers()
   }
 
-  async function updateRole(id, role) {
-    await supabase.from('profiles').update({ role }).eq('id', id)
-    setUsers(prev => prev.map(u => u.id === id ? { ...u, role } : u))
+  // ── Modifier ──
+  function startEdit(u) {
+    setEditId(u.id)
+    setEditForm({ full_name: u.full_name, email: u.email, role: u.role, password: '' })
+  }
+  async function saveEdit(id) {
+    setSaving(true)
+    const updates = { full_name: editForm.full_name, role: editForm.role }
+    await supabase.from('profiles').update(updates).eq('id', id)
+    // Changer mot de passe si renseigné
+    if (editForm.password) {
+      await supabase.auth.admin.updateUserById(id, { password: editForm.password })
+        .catch(() => {}) // silencieux si pas de droits admin
+    }
+    setUsers(prev => prev.map(u => u.id === id ? { ...u, ...updates } : u))
+    setEditId(null); setSaving(false)
+    showMsg('✅ Utilisateur mis à jour')
+  }
+
+  // ── Supprimer ──
+  async function deleteUser(u) {
+    if (!window.confirm(`Supprimer le compte de ${u.full_name} (${u.email}) ?
+Cette action est irréversible.`)) return
+    await supabase.auth.admin.deleteUser(u.id).catch(() => {})
+    await supabase.from('profiles').delete().eq('id', u.id)
+    setUsers(prev => prev.filter(x => x.id !== u.id))
+    showMsg(`Compte ${u.email} supprimé`)
   }
 
   if (loading) return <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-brand mx-auto mt-10"/>
+
+  const ROLE_COLORS = {
+    admin:     'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300',
+    operateur: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300',
+    lecteur:   'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400',
+  }
+  const ROLE_ICONS = { admin:'👑', operateur:'✏️', lecteur:'👁️' }
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-gray-500 text-sm">{users.length} utilisateur(s)</p>
-        <button onClick={() => setShowForm(!showForm)} className="btn-primary flex items-center gap-2 text-sm">
+        <button onClick={() => { setShowForm(!showForm); setEditId(null) }}
+          className="btn-primary flex items-center gap-2 text-sm">
           <UserPlus size={15}/> Nouvel utilisateur
         </button>
       </div>
 
-      {success && <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 text-green-700 rounded-lg px-4 py-3 text-sm">{success}</div>}
+      {/* Message feedback */}
+      {msg.text && (
+        <div className={`rounded-lg px-4 py-3 text-sm border ${
+          msg.type==='error' ? 'bg-red-50 dark:bg-red-900/20 border-red-200 text-red-700' :
+          msg.type==='warn'  ? 'bg-amber-50 border-amber-200 text-amber-700' :
+                               'bg-green-50 dark:bg-green-900/20 border-green-200 text-green-700'
+        }`}>{msg.text}</div>
+      )}
 
+      {/* Formulaire création */}
       {showForm && (
         <div className="card p-5 border-l-4 border-l-brand">
-          <h3 className="font-bold text-gray-800 dark:text-white mb-4 flex items-center gap-2"><Mail size={16}/> Créer un utilisateur & envoyer les identifiants</h3>
+          <h3 className="font-bold text-gray-800 dark:text-white mb-4 flex items-center gap-2">
+            <UserPlus size={16}/> Créer un utilisateur
+          </h3>
           <div className="grid grid-cols-2 gap-4">
-            <div><label className="label">Nom complet</label><input className="input" value={form.full_name} onChange={e => setForm(f=>({...f, full_name: e.target.value}))} placeholder="Prénom Nom"/></div>
-            <div><label className="label">Email</label><input type="email" className="input" value={form.email} onChange={e => setForm(f=>({...f, email: e.target.value}))} placeholder="email@etablissement.ma"/></div>
             <div>
-              <label className="label">Rôle</label>
+              <label className="label">Nom complet *</label>
+              <input className="input" value={form.full_name} onChange={e => setForm(f=>({...f, full_name: e.target.value}))} placeholder="Prénom Nom"/>
+            </div>
+            <div>
+              <label className="label">Email *</label>
+              <input type="email" className="input" value={form.email} onChange={e => setForm(f=>({...f, email: e.target.value}))} placeholder="email@arwamedic.ma"/>
+            </div>
+            <div>
+              <label className="label">Rôle *</label>
               <select className="input" value={form.role} onChange={e => setForm(f=>({...f, role: e.target.value}))}>
                 <option value="lecteur">👁️ Lecteur — consultation uniquement</option>
                 <option value="operateur">✏️ Opérateur — saisie + consultation</option>
                 <option value="admin">👑 Administrateur — accès complet</option>
               </select>
             </div>
-            <div><label className="label">Mot de passe initial</label><input type="text" className="input" value={form.password} onChange={e => setForm(f=>({...f, password: e.target.value}))} placeholder="Mot de passe temporaire"/></div>
+            <div>
+              <label className="label">Mot de passe initial *</label>
+              <input type="text" className="input" value={form.password} onChange={e => setForm(f=>({...f, password: e.target.value}))} placeholder="Mot de passe temporaire"/>
+            </div>
           </div>
-          <div className="mt-3 text-xs text-gray-400 flex items-center gap-1">
-            <Mail size={11}/> Un email de confirmation sera envoyé automatiquement par Supabase avec les identifiants de connexion.
+          <div className="flex gap-3 mt-4">
+            <button onClick={createUser} disabled={saving} className="btn-primary flex items-center gap-2 text-sm">
+              <Save size={14}/> {saving ? 'Création...' : 'Créer le compte'}
+            </button>
+            <button onClick={() => setShowForm(false)} className="btn-outline text-sm">Annuler</button>
           </div>
-          <button onClick={createUser} disabled={saving} className="btn-primary mt-4 flex items-center gap-2 text-sm">
-            <Mail size={15}/> {saving ? 'Création...' : 'Créer le compte & envoyer par mail'}
-          </button>
         </div>
       )}
 
+      {/* Tableau */}
       <div className="card overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 dark:bg-gray-800/50">
-            <tr><th className="text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide px-4 py-3 whitespace-nowrap">Nom</th><th className="text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide px-4 py-3 whitespace-nowrap">Email</th><th className="text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide px-4 py-3 whitespace-nowrap">Rôle</th><th className="text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide px-4 py-3 whitespace-nowrap">Thème</th><th className="text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide px-4 py-3 whitespace-nowrap">Créé le</th></tr>
+            <tr>
+              {['Nom','Email','Rôle','Créé le','Actions'].map(h => (
+                <th key={h} className="text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide px-4 py-3 whitespace-nowrap">{h}</th>
+              ))}
+            </tr>
           </thead>
           <tbody className="divide-y divide-gray-50 dark:divide-gray-800">
             {users.map(u => (
               <tr key={u.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/40">
-                <td className="px-4 py-3 font-medium">{u.full_name}</td>
-                <td className="px-4 py-3 text-gray-500 text-xs">{u.email}</td>
-                <td className="px-4 py-3">
-                  <select value={u.role} onChange={e => updateRole(u.id, e.target.value)}
-                    className="text-xs border border-gray-200 dark:border-gray-700 rounded-lg px-2 py-1 bg-white dark:bg-gray-800">
-                    <option value="lecteur">👁️ Lecteur</option>
-                    <option value="operateur">✏️ Opérateur</option>
-                    <option value="admin">👑 Admin</option>
-                  </select>
-                </td>
-                <td className="px-4 py-3 text-xs capitalize text-gray-400">{u.theme}</td>
-                <td className="px-4 py-3 text-xs text-gray-400 font-mono">{new Date(u.created_at).toLocaleDateString('fr-FR')}</td>
+
+                {editId === u.id ? (
+                  /* ── Mode édition ── */
+                  <>
+                    <td className="px-4 py-2">
+                      <input className="input py-1 text-xs w-36"
+                        value={editForm.full_name}
+                        onChange={e => setEditForm(f=>({...f, full_name: e.target.value}))}/>
+                    </td>
+                    <td className="px-4 py-2 text-xs text-gray-400">{u.email}</td>
+                    <td className="px-4 py-2">
+                      <select className="input py-1 text-xs w-36"
+                        value={editForm.role}
+                        onChange={e => setEditForm(f=>({...f, role: e.target.value}))}>
+                        <option value="lecteur">👁️ Lecteur</option>
+                        <option value="operateur">✏️ Opérateur</option>
+                        <option value="admin">👑 Admin</option>
+                      </select>
+                    </td>
+                    <td className="px-4 py-2">
+                      <input type="password" className="input py-1 text-xs w-36"
+                        value={editForm.password}
+                        onChange={e => setEditForm(f=>({...f, password: e.target.value}))}
+                        placeholder="Nouveau mdp (optionnel)"/>
+                    </td>
+                    <td className="px-4 py-2">
+                      <div className="flex gap-2">
+                        <button onClick={() => saveEdit(u.id)}
+                          className="flex items-center gap-1 text-xs bg-green-500 text-white px-2 py-1 rounded-lg">
+                          <Save size={12}/> Sauver
+                        </button>
+                        <button onClick={() => setEditId(null)}
+                          className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1">
+                          Annuler
+                        </button>
+                      </div>
+                    </td>
+                  </>
+                ) : (
+                  /* ── Mode lecture ── */
+                  <>
+                    <td className="px-4 py-3 font-medium text-gray-900 dark:text-white">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-full bg-brand/10 flex items-center justify-center text-xs font-bold text-brand">
+                          {u.full_name?.charAt(0)?.toUpperCase() || '?'}
+                        </div>
+                        {u.full_name}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-gray-500 text-xs">{u.email}</td>
+                    <td className="px-4 py-3">
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${ROLE_COLORS[u.role]||''}`}>
+                        {ROLE_ICONS[u.role]} {u.role}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-gray-400 font-mono">
+                      {new Date(u.created_at).toLocaleDateString('fr-FR')}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex gap-2">
+                        <button onClick={() => startEdit(u)}
+                          className="text-xs text-gray-400 hover:text-brand flex items-center gap-1 px-2 py-1 rounded border border-gray-200 hover:border-brand transition-colors">
+                          ✏️ Modifier
+                        </button>
+                        <button onClick={() => deleteUser(u)}
+                          className="text-xs text-red-400 hover:text-red-600 flex items-center gap-1 px-2 py-1 rounded border border-gray-200 hover:border-red-300 transition-colors">
+                          <Trash2 size={12}/> Supprimer
+                        </button>
+                      </div>
+                    </td>
+                  </>
+                )}
               </tr>
             ))}
           </tbody>
