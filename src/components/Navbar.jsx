@@ -107,7 +107,6 @@ export default function Navbar({ alertCount = 0 }) {
         </button>
       </div>
     </aside>
-  )
     </>
   )
 }
