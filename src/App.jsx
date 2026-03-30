@@ -15,6 +15,7 @@ import PointsParSalle from '@/pages/PointsParSalle'
 import Personnel from '@/pages/Personnel'
 import Saisie2026 from '@/pages/Saisie2026'
 import SaisiePersonnel from '@/pages/SaisiePersonnel'
+import Backup from '@/pages/Backup'
 
 function Layout() {
   const [alertCount, setAlertCount] = useState(0)
@@ -47,6 +48,7 @@ function Layout() {
           <Route path="/personnel"  element={<Personnel />} />
           <Route path="/saisie2026" element={<ProtectedRoute requireOperateur><Saisie2026 /></ProtectedRoute>} />
           <Route path="/saisie-personnel" element={<ProtectedRoute requireOperateur><SaisiePersonnel /></ProtectedRoute>} />
+          <Route path="/backup" element={<ProtectedRoute requireAdmin><Backup /></ProtectedRoute>} />
           <Route path="/alertes"   element={<Alertes />} />
           <Route path="/saisie"    element={<ProtectedRoute requireOperateur><Saisie /></ProtectedRoute>} />
           <Route path="/audit"     element={<ProtectedRoute requireAdmin><AuditTrail /></ProtectedRoute>} />
