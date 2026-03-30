@@ -1,4 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom'
+import { useState, useEffect } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTheme } from '@/contexts/ThemeContext'
 import { LayoutDashboard, TrendingUp, AlertTriangle, PenLine, ClipboardList, Settings, Sun, Moon, LogOut, FlaskConical } from 'lucide-react'
@@ -29,6 +30,28 @@ export default function Navbar({ alertCount = 0 }) {
   }
 
   return (
+    <>
+    {showBackupAlert && (
+      <div style={{
+        position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9999,
+        background: '#d97706', color: '#fff',
+        padding: '10px 20px',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        fontSize: '13px', fontWeight: 600, boxShadow: '0 2px 8px rgba(0,0,0,.2)'
+      }}>
+        <span>💾 Rappel sauvegarde — Pensez à télécharger la sauvegarde EnviroControl (Admin → Sauvegarde)</span>
+        <div style={{ display:'flex', gap: 8 }}>
+          <button onClick={() => { window.location.hash = '/admin'; dismissBackup() }}
+            style={{ background:'rgba(255,255,255,.2)', border:'none', color:'#fff',
+              padding:'4px 12px', borderRadius:6, cursor:'pointer', fontSize:12 }}>
+            Aller sauvegarder →
+          </button>
+          <button onClick={dismissBackup}
+            style={{ background:'none', border:'none', color:'rgba(255,255,255,.7)',
+              cursor:'pointer', fontSize:16, padding:'0 4px' }}>✕</button>
+        </div>
+      </div>
+    )}
     <aside className="w-56 shrink-0 min-h-screen flex flex-col bg-navy dark:bg-gray-900 border-r border-navy-light dark:border-gray-800">
       {/* Logo */}
       <div className="p-5 border-b border-navy-light dark:border-gray-800">
@@ -84,5 +107,7 @@ export default function Navbar({ alertCount = 0 }) {
         </button>
       </div>
     </aside>
+  )
+    </>
   )
 }
