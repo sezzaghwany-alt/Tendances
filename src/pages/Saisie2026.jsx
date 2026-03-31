@@ -128,12 +128,25 @@ export default function Saisie2026() {
 
   useEffect(() => {
     async function load() {
-      const [z, p] = await Promise.all([
+      const [z, p, n] = await Promise.all([
         supabase.from('zones').select('*').eq('actif', true),
-        supabase.from('points_controle').select('*, salles(label), normes(norme,alerte,action,unite)').eq('actif', true),
+        supabase.from('points_controle').select('*, salles(label)').eq('actif', true),
+        supabase.from('normes').select('*'),
       ])
       setZones(z.data || [])
-      setPointsDB(p.data || [])
+      // Attacher les normes à chaque point via zone_id + type_controle
+      const normesMap = {}
+      ;(n.data || []).forEach(nm => {
+        normesMap[`${nm.zone_id}_${nm.type_controle}`] = nm
+      })
+      const pts = (p.data || []).map(pt => ({
+        ...pt,
+        norme:  normesMap[`${pt.zone_id}_${pt.type_controle}`]?.norme  || 0,
+        alerte: normesMap[`${pt.zone_id}_${pt.type_controle}`]?.alerte || 0,
+        action: normesMap[`${pt.zone_id}_${pt.type_controle}`]?.action || 0,
+        unite:  normesMap[`${pt.zone_id}_${pt.type_controle}`]?.unite  || 'UFC',
+      }))
+      setPointsDB(pts)
       setLoading(false)
     }
     load()
@@ -156,10 +169,10 @@ export default function Saisie2026() {
       .map(p => ({
         ...p,
         salle:  p.salles?.label || '',
-        norme:  p.normes?.norme  || 0,
-        alerte: p.normes?.alerte || 0,
-        action: p.normes?.action || 0,
-        unite:  p.normes?.unite  || 'UFC',
+        norme:  p.norme  || 0,
+        alerte: p.alerte || 0,
+        action: p.action || 0,
+        unite:  p.unite  || 'UFC',
       }))
       .sort((a, b) => {
         const order = { ACTIF:0, PASSIF:1, SURFACE:2 }
