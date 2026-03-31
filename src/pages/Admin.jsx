@@ -203,16 +203,43 @@ function UsersTab() {
   // ── Créer ──
   async function createUser() {
     if (!form.email || !form.password || !form.full_name) return showMsg('Tous les champs sont obligatoires','warn')
+    if (form.password.length < 6) return showMsg('Mot de passe : 6 caractères minimum','warn')
     setSaving(true)
-    // Tenter admin.createUser, sinon fallback signUp
+
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+    const serviceKey  = import.meta.env.VITE_SUPABASE_SERVICE_KEY
+
     let userId = null
-    const { data: ad, error: ae } = await supabase.auth.admin.createUser({
-      email: form.email, password: form.password, email_confirm: true,
-      user_metadata: { full_name: form.full_name, role: form.role }
-    })
-    if (ad?.user) {
-      userId = ad.user.id
+
+    if (serviceKey) {
+      // API Admin via service_role — crée le compte et confirme l'email directement
+      try {
+        const res = await fetch(`${supabaseUrl}/auth/v1/admin/users`, {
+          method: 'POST',
+          headers: {
+            'apikey': serviceKey,
+            'Authorization': `Bearer ${serviceKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            email: form.email,
+            password: form.password,
+            email_confirm: true,
+            user_metadata: { full_name: form.full_name, role: form.role }
+          })
+        })
+        const d = await res.json()
+        if (!res.ok) {
+          setSaving(false)
+          return showMsg(d.message || d.msg || 'Erreur création compte', 'error')
+        }
+        userId = d.id
+      } catch (e) {
+        setSaving(false)
+        return showMsg('Erreur réseau : ' + e.message, 'error')
+      }
     } else {
+      // Fallback signUp sans service_role
       const { data: sd, error: se } = await supabase.auth.signUp({
         email: form.email, password: form.password,
         options: { data: { full_name: form.full_name, role: form.role } }
@@ -220,10 +247,18 @@ function UsersTab() {
       if (se) { setSaving(false); return showMsg(se.message, 'error') }
       userId = sd?.user?.id
     }
+
+    // Créer/mettre à jour le profil dans la table profiles
     if (userId) {
-      await supabase.from('profiles').upsert({ id: userId, full_name: form.full_name, email: form.email, role: form.role })
+      const { error: pe } = await supabase.from('profiles')
+        .upsert({ id: userId, full_name: form.full_name, email: form.email, role: form.role })
+      if (pe) {
+        setSaving(false)
+        return showMsg('Compte créé mais erreur profil : ' + pe.message, 'warn')
+      }
     }
-    showMsg(`✅ Compte créé pour ${form.email}`)
+
+    showMsg(`Compte créé pour ${form.email}`)
     setForm(EMPTY); setShowForm(false); setSaving(false)
     loadUsers()
   }
