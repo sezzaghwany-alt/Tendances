@@ -134,18 +134,27 @@ export default function Saisie2026() {
         supabase.from('normes').select('*'),
       ])
       setZones(z.data || [])
-      // Attacher les normes à chaque point via zone_id + type_controle
+      // Attacher les normes via zone_id + type_controle + classe
       const normesMap = {}
       ;(n.data || []).forEach(nm => {
-        normesMap[`${nm.zone_id}_${nm.type_controle}`] = nm
+        normesMap[`${nm.zone_id}_${nm.type_controle}_${nm.classe}`] = nm
+        // Fallback sans classe
+        if (!normesMap[`${nm.zone_id}_${nm.type_controle}`]) {
+          normesMap[`${nm.zone_id}_${nm.type_controle}`] = nm
+        }
       })
-      const pts = (p.data || []).map(pt => ({
-        ...pt,
-        norme:  normesMap[`${pt.zone_id}_${pt.type_controle}`]?.norme  || 0,
-        alerte: normesMap[`${pt.zone_id}_${pt.type_controle}`]?.alerte || 0,
-        action: normesMap[`${pt.zone_id}_${pt.type_controle}`]?.action || 0,
-        unite:  normesMap[`${pt.zone_id}_${pt.type_controle}`]?.unite  || 'UFC',
-      }))
+      const pts = (p.data || []).map(pt => {
+        const keyClasse = `${pt.zone_id}_${pt.type_controle}_${pt.classe}`
+        const keyFallback = `${pt.zone_id}_${pt.type_controle}`
+        const nm = normesMap[keyClasse] || normesMap[keyFallback] || {}
+        return {
+          ...pt,
+          norme:  nm.norme  || 0,
+          alerte: nm.alerte || 0,
+          action: nm.action || 0,
+          unite:  nm.unite  || 'UFC',
+        }
+      })
       setPointsDB(pts)
       setLoading(false)
     }
