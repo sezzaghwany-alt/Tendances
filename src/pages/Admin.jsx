@@ -237,14 +237,46 @@ function UsersTab() {
     setSaving(true)
     const updates = { full_name: editForm.full_name, role: editForm.role }
     await supabase.from('profiles').update(updates).eq('id', id)
-    // Changer mot de passe si renseigné
-    if (editForm.password) {
-      await supabase.auth.admin.updateUserById(id, { password: editForm.password })
-        .catch(() => {}) // silencieux si pas de droits admin
+
+    // Changer mot de passe via API REST Admin
+    if (editForm.password && editForm.password.length >= 6) {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+        const serviceKey  = import.meta.env.VITE_SUPABASE_SERVICE_KEY
+
+        if (serviceKey) {
+          // Utiliser la service_role key si disponible en env
+          const res = await fetch(`${supabaseUrl}/auth/v1/admin/users/${id}`, {
+            method: 'PUT',
+            headers: {
+              'apikey': serviceKey,
+              'Authorization': `Bearer ${serviceKey}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ password: editForm.password })
+          })
+          if (!res.ok) {
+            const err = await res.json()
+            showMsg(`Profil mis à jour mais mot de passe non modifié : ${err.message || 'droits insuffisants'}`, 'warn')
+            setUsers(prev => prev.map(u => u.id === id ? { ...u, ...updates } : u))
+            setEditId(null); setSaving(false); return
+          }
+        } else {
+          showMsg('Profil mis à jour — pour changer le mot de passe, configurez VITE_SUPABASE_SERVICE_KEY', 'warn')
+          setUsers(prev => prev.map(u => u.id === id ? { ...u, ...updates } : u))
+          setEditId(null); setSaving(false); return
+        }
+      } catch (e) {
+        showMsg('Profil mis à jour mais erreur mot de passe : ' + e.message, 'warn')
+        setUsers(prev => prev.map(u => u.id === id ? { ...u, ...updates } : u))
+        setEditId(null); setSaving(false); return
+      }
     }
+
     setUsers(prev => prev.map(u => u.id === id ? { ...u, ...updates } : u))
     setEditId(null); setSaving(false)
-    showMsg('✅ Utilisateur mis à jour')
+    showMsg('Utilisateur mis à jour')
   }
 
   // ── Supprimer ──
