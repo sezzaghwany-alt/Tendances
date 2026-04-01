@@ -1051,10 +1051,10 @@ function NormesEauTab() {
                   <td className="px-4 py-3 font-medium">{PARAM_LABELS[n.parametre]||n.parametre}</td>
                   {ed ? (
                     <>
-                      <td className="px-4 py-2"><input type="number" step="0.01" className="input w-24 py-1 text-sm" defaultValue={n.norme_max} onChange={e=>setEditing(prev=>({...prev,[n.id]:{...prev[n.id],norme_max:e.target.value}})}/></td>
-                      <td className="px-4 py-2"><input type="number" step="0.01" className="input w-24 py-1 text-sm" defaultValue={n.la} onChange={e=>setEditing(prev=>({...prev,[n.id]:{...prev[n.id],la:e.target.value}})}/></td>
-                      <td className="px-4 py-2"><input type="number" step="0.01" className="input w-24 py-1 text-sm" defaultValue={n.lac} onChange={e=>setEditing(prev=>({...prev,[n.id]:{...prev[n.id],lac:e.target.value}})}/></td>
-                      <td className="px-4 py-2"><input className="input w-20 py-1 text-sm" defaultValue={n.unite} onChange={e=>setEditing(prev=>({...prev,[n.id]:{...prev[n.id],unite:e.target.value}})}/></td>
+                      <td className="px-4 py-2"><input type="number" step="0.01" className="input w-24 py-1 text-sm" defaultValue={n.norme_max} onChange={e=>setEditing(prev=>({...prev,[n.id]:{...prev[n.id],norme_max:e.target.value}}))}/></td>
+                      <td className="px-4 py-2"><input type="number" step="0.01" className="input w-24 py-1 text-sm" defaultValue={n.la} onChange={e=>setEditing(prev=>({...prev,[n.id]:{...prev[n.id],la:e.target.value}}))}/></td>
+                      <td className="px-4 py-2"><input type="number" step="0.01" className="input w-24 py-1 text-sm" defaultValue={n.lac} onChange={e=>setEditing(prev=>({...prev,[n.id]:{...prev[n.id],lac:e.target.value}}))}/></td>
+                      <td className="px-4 py-2"><input className="input w-20 py-1 text-sm" defaultValue={n.unite} onChange={e=>setEditing(prev=>({...prev,[n.id]:{...prev[n.id],unite:e.target.value}}))}/></td>
                       <td className="px-4 py-2">
                         <div className="flex gap-2">
                           <button onClick={() => saveNorme(n.id)} className="text-xs bg-green-500 text-white px-2 py-1 rounded-lg flex items-center gap-1"><Save size={11}/> OK</button>
