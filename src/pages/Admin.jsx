@@ -706,57 +706,66 @@ function PointsTab() {
   )
 }
 
-// ── Points de contrôle (CRUD complet) ────────────────────────────────────────
-function PointsEauxTab() {
-  const [points, setPoints] = useState([])
-  const [zones,  setZones]  = useState([])
-  const [loading, setLoading] = useState(true)
-  const [selZone, setSelZone] = useState('ALL')
-  const [editId,  setEditId]  = useState(null)
+
+
+// ── Points de prélèvement Eaux ────────────────────────────────────────────────
+function PointsEauTab() {
+  const TYPES = ['EA','EPU','EPPI']
+  const FREQUENCES = ['Journalier','Hebdomadaire','Bimensuel','Mensuel','Trimestriel']
+  const [points,   setPoints]   = useState([])
+  const [loading,  setLoading]  = useState(true)
+  const [selType,  setSelType]  = useState('ALL')
   const [showForm, setShowForm] = useState(false)
+  const [editId,   setEditId]   = useState(null)
+  const [saving,   setSaving]   = useState(false)
+  const [msg,      setMsg]      = useState('')
+
+  const EMPTY = { type_eau:'EPU', code:'', localisation:'', frequence:'Journalier', actif:true }
+  const [form,     setForm]     = useState(EMPTY)
   const [editForm, setEditForm] = useState({})
-  const [saving, setSaving] = useState(false)
-  const EMPTY = { zone_id:'', code:'', localisation:'', type_controle:'ACTIF', classe:'C', ecran:'', actif:true }
-  const [form, setForm] = useState(EMPTY)
 
   useEffect(() => {
-    Promise.all([
-      supabase.from('zones').select('*').eq('actif',true).order('label'),
-      supabase.from('points_controle').select('*, zones(label,code), salles(label)').order('point'),
-    ]).then(([z,p]) => {
-      setZones(z.data||[])
-      setPoints(p.data||[])
-      setLoading(false)
-    })
+    supabase.from('points_eau').select('*').order('type_eau').order('code')
+      .then(({ data }) => { setPoints(data||[]); setLoading(false) })
   }, [])
 
-  const filtered = selZone==='ALL' ? points : points.filter(p=>p.zones?.code===selZone)
+  const filtered = selType === 'ALL' ? points : points.filter(p => p.type_eau === selType)
 
   async function addPoint() {
-    if (!form.zone_id || !form.code) return
+    if (!form.code || !form.type_eau) return
     setSaving(true)
-    const { data } = await supabase.from('points_controle').insert(form).select('*, zones(label,code), salles(label)')
-    if (data) { setPoints(prev=>[...prev,...data]); setShowForm(false); setForm(EMPTY) }
-    setSaving(false)
+    const { data, error } = await supabase.from('points_eau').insert(form).select()
+    if (error) { setMsg('Erreur : ' + error.message); setSaving(false); return }
+    if (data) setPoints(prev => [...prev, data[0]])
+    setShowForm(false); setForm(EMPTY); setSaving(false)
+    setMsg('Point ajouté')
+    setTimeout(() => setMsg(''), 3000)
   }
 
   async function saveEdit(id) {
     setSaving(true)
-    const { localisation, type_controle, classe, ecran, actif } = editForm
-    await supabase.from('points_controle').update({ localisation, type_controle, classe, ecran, actif }).eq('id',id)
-    setPoints(prev=>prev.map(p=>p.id===id?{...p,...editForm}:p))
+    const { code, localisation, frequence, actif } = editForm
+    await supabase.from('points_eau').update({ code, localisation, frequence, actif }).eq('id', id)
+    setPoints(prev => prev.map(p => p.id === id ? { ...p, ...editForm } : p))
     setEditId(null); setSaving(false)
+    setMsg('Point mis à jour'); setTimeout(() => setMsg(''), 3000)
   }
 
-  async function deletePoint(id, code) {
-    if (!window.confirm(`Supprimer le point ${code} ? Cette action est irréversible.`)) return
-    await supabase.from('points_controle').delete().eq('id',id)
-    setPoints(prev=>prev.filter(p=>p.id!==id))
+  async function deletePoint(p) {
+    if (!window.confirm(`Supprimer le point ${p.code} (${p.type_eau}) ?`)) return
+    await supabase.from('points_eau').delete().eq('id', p.id)
+    setPoints(prev => prev.filter(x => x.id !== p.id))
   }
 
-  async function togglePoint(id, actif) {
-    await supabase.from('points_controle').update({ actif: !actif }).eq('id',id)
-    setPoints(prev=>prev.map(p=>p.id===id?{...p,actif:!actif}:p))
+  async function toggleActif(id, actif) {
+    await supabase.from('points_eau').update({ actif: !actif }).eq('id', id)
+    setPoints(prev => prev.map(p => p.id === id ? { ...p, actif: !actif } : p))
+  }
+
+  const TYPE_COLOR = {
+    EA:   { bg:'#E8F4FD', txt:'#185FA5' },
+    EPU:  { bg:'#E8F5E9', txt:'#3B6D11' },
+    EPPI: { bg:'#F3E8FF', txt:'#6B21A8' },
   }
 
   if (loading) return <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-brand mx-auto mt-10"/>
@@ -764,46 +773,51 @@ function PointsEauxTab() {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3 flex-wrap">
-        <select value={selZone} onChange={e=>setSelZone(e.target.value)} className="input py-1.5 text-sm w-52">
-          <option value="ALL">Toutes les zones</option>
-          {zones.map(z=><option key={z.code} value={z.code}>{z.icon} {z.label}</option>)}
-        </select>
+        <div className="flex gap-1">
+          {['ALL','EA','EPU','EPPI'].map(t => (
+            <button key={t} onClick={() => setSelType(t)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                selType===t ? 'bg-navy text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-500 hover:bg-gray-200'
+              }`}>{t === 'ALL' ? 'Tous' : t}</button>
+          ))}
+        </div>
         <span className="text-xs text-gray-400">{filtered.length} point(s)</span>
-        <button onClick={()=>setShowForm(!showForm)} className="btn-primary flex items-center gap-2 text-sm ml-auto"><Plus size={15}/> Nouveau point</button>
+        <button onClick={() => setShowForm(!showForm)}
+          className="btn-primary flex items-center gap-2 text-sm ml-auto"><Plus size={15}/> Nouveau point</button>
       </div>
+
+      {msg && <div className="text-sm text-green-600 font-medium bg-green-50 border border-green-200 px-4 py-2 rounded-lg">{msg}</div>}
 
       {showForm && (
         <div className="card p-4 border-l-4 border-l-brand">
-          <h3 className="font-bold text-gray-800 dark:text-white mb-3 flex items-center gap-2"><Plus size={15}/> Nouveau point de contrôle</h3>
-          <div className="grid grid-cols-3 gap-3">
+          <h3 className="font-bold text-gray-800 dark:text-white mb-3">Nouveau point de prélèvement</h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div>
-              <label className="label">Zone *</label>
-              <select className="input" value={form.zone_id} onChange={e=>setForm(f=>({...f,zone_id:e.target.value}))}>
-                <option value="">— Zone —</option>
-                {zones.map(z=><option key={z.id} value={z.id}>{z.label}</option>)}
-              </select>
-            </div>
-            <div><label className="label">Code point *</label><input className="input" value={form.code} onChange={e=>setForm(f=>({...f,code:e.target.value.toUpperCase()}))} placeholder="Ex: A1, P3, S7"/></div>
-            <div><label className="label">Localisation</label><input className="input" value={form.localisation} onChange={e=>setForm(f=>({...f,localisation:e.target.value}))} placeholder="Description physique"/></div>
-            <div>
-              <label className="label">Type</label>
-              <select className="input" value={form.type_controle} onChange={e=>setForm(f=>({...f,type_controle:e.target.value}))}>
-                <option value="ACTIF">ACTIF</option>
-                <option value="PASSIF">PASSIF</option>
-                <option value="SURFACE">SURFACE</option>
+              <label className="label">Type eau *</label>
+              <select className="input" value={form.type_eau} onChange={e => setForm(f=>({...f,type_eau:e.target.value}))}>
+                {TYPES.map(t => <option key={t} value={t}>{t}</option>)}
               </select>
             </div>
             <div>
-              <label className="label">Classe</label>
-              <select className="input" value={form.classe} onChange={e=>setForm(f=>({...f,classe:e.target.value}))}>
-                <option value="A">A</option><option value="B">B</option><option value="C">C</option><option value="D">D</option>
+              <label className="label">Code point *</label>
+              <input className="input" value={form.code} onChange={e => setForm(f=>({...f,code:e.target.value}))} placeholder="Ex: PeS658, V436A.1.2"/>
+            </div>
+            <div>
+              <label className="label">Localisation</label>
+              <input className="input" value={form.localisation} onChange={e => setForm(f=>({...f,localisation:e.target.value}))} placeholder="Description du point"/>
+            </div>
+            <div>
+              <label className="label">Fréquence</label>
+              <select className="input" value={form.frequence} onChange={e => setForm(f=>({...f,frequence:e.target.value}))}>
+                {FREQUENCES.map(f => <option key={f} value={f}>{f}</option>)}
               </select>
             </div>
-            <div><label className="label">Écran</label><input className="input" value={form.ecran} onChange={e=>setForm(f=>({...f,ecran:e.target.value}))} placeholder="Ex: Ecran1"/></div>
           </div>
           <div className="flex gap-2 mt-3">
-            <button onClick={addPoint} disabled={saving} className="btn-primary text-sm flex items-center gap-2"><Save size={14}/> {saving?'Ajout...':'Ajouter'}</button>
-            <button onClick={()=>setShowForm(false)} className="btn-outline text-sm">Annuler</button>
+            <button onClick={addPoint} disabled={saving} className="btn-primary text-sm flex items-center gap-2">
+              <Save size={14}/> {saving ? 'Ajout...' : 'Ajouter'}
+            </button>
+            <button onClick={() => setShowForm(false)} className="btn-outline text-sm">Annuler</button>
           </div>
         </div>
       )}
@@ -811,56 +825,72 @@ function PointsEauxTab() {
       <div className="card overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 dark:bg-gray-800/50">
-            <tr>{['Zone','Code','Type','Classe','Écran','Localisation','Statut','Actions'].map(h=>(
-              <th key={h} className="text-left text-xs font-bold text-gray-500 uppercase tracking-wide px-3 py-3 whitespace-nowrap">{h}</th>
+            <tr>{['Type','Code','Localisation','Fréquence','Statut','Actions'].map(h => (
+              <th key={h} className="text-left text-xs font-bold text-gray-500 uppercase tracking-wide px-4 py-3 whitespace-nowrap">{h}</th>
             ))}</tr>
           </thead>
           <tbody className="divide-y divide-gray-50 dark:divide-gray-800">
-            {filtered.map(pt=>(
-              <tr key={pt.id} className={`hover:bg-gray-50 dark:hover:bg-gray-800/40 ${!pt.actif?'opacity-40':''}`}>
-                {editId===pt.id ? (
+            {filtered.map(p => (
+              <tr key={p.id} className={`hover:bg-gray-50 dark:hover:bg-gray-800/40 ${!p.actif?'opacity-40':''}`}>
+                {editId === p.id ? (
                   <>
-                    <td className="px-3 py-2 text-xs text-gray-400">{pt.zones?.label}</td>
-                    <td className="px-3 py-2 font-mono font-bold text-brand">{pt.point}</td>
-                    <td className="px-3 py-2">
-                      <select className="input py-1 text-xs w-24" value={editForm.type_controle} onChange={e=>setEditForm(f=>({...f,type_controle:e.target.value}))}>
-                        <option value="ACTIF">ACTIF</option><option value="PASSIF">PASSIF</option><option value="SURFACE">SURFACE</option>
+                    <td className="px-4 py-2">
+                      <span className="text-xs font-bold px-2 py-0.5 rounded-full"
+                        style={{ background: TYPE_COLOR[p.type_eau]?.bg, color: TYPE_COLOR[p.type_eau]?.txt }}>
+                        {p.type_eau}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2 font-mono text-xs font-bold text-brand">{p.code}</td>
+                    <td className="px-4 py-2">
+                      <input className="input py-1 text-xs w-56"
+                        value={editForm.localisation||''}
+                        onChange={e => setEditForm(f=>({...f,localisation:e.target.value}))}/>
+                    </td>
+                    <td className="px-4 py-2">
+                      <select className="input py-1 text-xs w-32"
+                        value={editForm.frequence||'Journalier'}
+                        onChange={e => setEditForm(f=>({...f,frequence:e.target.value}))}>
+                        {FREQUENCES.map(f => <option key={f} value={f}>{f}</option>)}
                       </select>
                     </td>
-                    <td className="px-3 py-2">
-                      <select className="input py-1 text-xs w-16" value={editForm.classe} onChange={e=>setEditForm(f=>({...f,classe:e.target.value}))}>
-                        <option>A</option><option>B</option><option>C</option><option>D</option>
-                      </select>
-                    </td>
-                    <td className="px-3 py-2"><input className="input py-1 text-xs w-20" value={editForm.ecran||''} onChange={e=>setEditForm(f=>({...f,ecran:e.target.value}))}/></td>
-                    <td className="px-3 py-2"><input className="input py-1 text-xs w-48" value={editForm.localisation||''} onChange={e=>setEditForm(f=>({...f,localisation:e.target.value}))}/></td>
-                    <td className="px-3 py-2 text-xs text-gray-400">—</td>
-                    <td className="px-3 py-2">
-                      <div className="flex gap-1">
-                        <button onClick={()=>saveEdit(pt.id)} className="text-xs bg-green-500 text-white px-2 py-1 rounded flex items-center gap-1"><Save size={11}/> OK</button>
-                        <button onClick={()=>setEditId(null)} className="text-xs text-gray-400 px-2 py-1">✕</button>
+                    <td className="px-4 py-2 text-xs text-gray-400">—</td>
+                    <td className="px-4 py-2">
+                      <div className="flex gap-2">
+                        <button onClick={() => saveEdit(p.id)}
+                          className="text-xs bg-green-500 text-white px-2 py-1 rounded-lg flex items-center gap-1">
+                          <Save size={11}/> OK
+                        </button>
+                        <button onClick={() => setEditId(null)} className="text-xs text-gray-400 px-2 py-1">✕</button>
                       </div>
                     </td>
                   </>
                 ) : (
                   <>
-                    <td className="px-3 py-2 text-xs text-gray-500">{pt.zones?.label}</td>
-                    <td className="px-3 py-2 font-mono font-bold text-brand">{pt.point}</td>
-                    <td className="px-3 py-2 text-xs font-mono">{pt.type_controle}</td>
-                    <td className="px-3 py-2 text-xs">Cl.{pt.classe}</td>
-                    <td className="px-3 py-2 text-xs text-gray-400 font-mono">{pt.ecran||'—'}</td>
-                    <td className="px-3 py-2 text-xs text-gray-500 max-w-xs truncate">{pt.localisation||'—'}</td>
-                    <td className="px-3 py-2">
-                      <button onClick={()=>togglePoint(pt.id,pt.actif)} className={`text-xs px-2 py-0.5 rounded-full font-bold ${pt.actif?'bg-green-100 text-green-700':'bg-gray-100 text-gray-500'}`}>
-                        {pt.actif?'Actif':'Inactif'}
+                    <td className="px-4 py-3">
+                      <span className="text-xs font-bold px-2 py-0.5 rounded-full"
+                        style={{ background: TYPE_COLOR[p.type_eau]?.bg, color: TYPE_COLOR[p.type_eau]?.txt }}>
+                        {p.type_eau}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 font-mono text-sm font-bold text-brand">{p.code}</td>
+                    <td className="px-4 py-3 text-xs text-gray-500 max-w-xs">{p.localisation||'—'}</td>
+                    <td className="px-4 py-3 text-xs text-gray-500">{p.frequence||'—'}</td>
+                    <td className="px-4 py-3">
+                      <button onClick={() => toggleActif(p.id, p.actif)}
+                        className={`text-xs px-2 py-0.5 rounded-full font-bold ${p.actif?'bg-green-100 text-green-700':'bg-gray-100 text-gray-500'}`}>
+                        {p.actif ? 'Actif' : 'Inactif'}
                       </button>
                     </td>
-                    <td className="px-3 py-2">
-                      <div className="flex gap-1">
-                        <button onClick={()=>{setEditId(pt.id);setEditForm({localisation:pt.localisation,type_controle:pt.type_controle,classe:pt.classe,ecran:pt.ecran||'',actif:pt.actif})}}
-                          className="text-xs text-gray-400 hover:text-brand px-2 py-1 rounded border border-gray-200 hover:border-brand">✏️</button>
-                        <button onClick={()=>deletePoint(pt.id,pt.point)}
-                          className="text-xs text-red-400 hover:text-red-600 px-2 py-1 rounded border border-gray-200 hover:border-red-300"><Trash2 size={12}/></button>
+                    <td className="px-4 py-3">
+                      <div className="flex gap-2">
+                        <button onClick={() => { setEditId(p.id); setEditForm({ localisation:p.localisation, frequence:p.frequence, actif:p.actif }) }}
+                          className="text-xs text-gray-400 hover:text-brand flex items-center gap-1 px-2 py-1 rounded border border-gray-200 hover:border-brand">
+                          ✏️ Modifier
+                        </button>
+                        <button onClick={() => deletePoint(p)}
+                          className="text-xs text-red-400 hover:text-red-600 flex items-center gap-1 px-2 py-1 rounded border border-gray-200 hover:border-red-300">
+                          <Trash2 size={12}/> Supprimer
+                        </button>
                       </div>
                     </td>
                   </>
@@ -869,6 +899,197 @@ function PointsEauxTab() {
             ))}
           </tbody>
         </table>
+        {filtered.length === 0 && (
+          <div className="text-center text-gray-400 py-8 text-sm">
+            Aucun point de prélèvement enregistré
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── Normes Eaux ───────────────────────────────────────────────────────────────
+function NormesEauTab() {
+  const TYPES = ['EA','EPU','EPPI']
+  const PARAMS = {
+    EA:   ['conductivite','pH','durete','alcalinite','chlorure','sulfate','fer','nitrate','dgat'],
+    EPU:  ['conductivite','dgat','endotoxines'],
+    EPPI: ['conductivite','cot','dgat','endotoxines'],
+  }
+  const PARAM_LABELS = {
+    conductivite: 'Conductivité',
+    pH:           'pH',
+    durete:       'Dureté',
+    alcalinite:   'Alcalinité TAC',
+    chlorure:     'Chlorure',
+    sulfate:      'Sulfate',
+    fer:          'Fer',
+    nitrate:      'Nitrate',
+    dgat:         'DGAT',
+    endotoxines:  'Endotoxines',
+    cot:          'COT',
+  }
+  const UNITE_MAP = {
+    conductivite: 'µS/cm', pH:'', durete:'°f', alcalinite:'°F',
+    chlorure:'mg/L', sulfate:'mg/L', fer:'mg/L', nitrate:'mg/L',
+    dgat:'UFC/mL', endotoxines:'UI/mL', cot:'ppb',
+  }
+
+  const [normes,  setNormes]  = useState([])
+  const [loading, setLoading] = useState(true)
+  const [selType, setSelType] = useState('EPU')
+  const [editing, setEditing] = useState({})
+  const [showForm, setShowForm] = useState(false)
+  const [saving,  setSaving]  = useState(false)
+  const [msg,     setMsg]     = useState('')
+  const EMPTY_N = { type_eau:'EPU', parametre:'conductivite', norme_max:null, la:null, lac:null, unite:'µS/cm' }
+  const [form, setForm] = useState(EMPTY_N)
+
+  useEffect(() => {
+    supabase.from('normes_eau').select('*').order('type_eau').order('parametre')
+      .then(({ data }) => { setNormes(data||[]); setLoading(false) })
+  }, [])
+
+  const filtered = normes.filter(n => n.type_eau === selType)
+
+  async function addNorme() {
+    if (!form.type_eau || !form.parametre) return
+    setSaving(true)
+    const { data, error } = await supabase.from('normes_eau').insert(form).select()
+    if (error) { setMsg('Erreur : ' + error.message); setSaving(false); return }
+    if (data) setNormes(prev => [...prev, data[0]])
+    setShowForm(false); setForm(EMPTY_N); setSaving(false)
+    setMsg('Norme ajoutée'); setTimeout(() => setMsg(''), 3000)
+  }
+
+  async function saveNorme(id) {
+    setSaving(true)
+    const ed = editing[id]
+    await supabase.from('normes_eau').update({
+      norme_max: parseFloat(ed.norme_max)||null,
+      la:        parseFloat(ed.la)||null,
+      lac:       parseFloat(ed.lac)||null,
+      unite:     ed.unite,
+    }).eq('id', id)
+    setNormes(prev => prev.map(n => n.id === id ? { ...n, ...ed } : n))
+    setEditing(prev => { const e = {...prev}; delete e[id]; return e })
+    setSaving(false)
+    setMsg('Norme mise à jour'); setTimeout(() => setMsg(''), 3000)
+  }
+
+  async function deleteNorme(id, label) {
+    if (!window.confirm(`Supprimer la norme "${label}" ?`)) return
+    await supabase.from('normes_eau').delete().eq('id', id)
+    setNormes(prev => prev.filter(n => n.id !== id))
+  }
+
+  if (loading) return <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-brand mx-auto mt-10"/>
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex gap-1">
+          {TYPES.map(t => (
+            <button key={t} onClick={() => setSelType(t)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                selType===t ? 'bg-navy text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-500 hover:bg-gray-200'
+              }`}>{t}</button>
+          ))}
+        </div>
+        <button onClick={() => setShowForm(!showForm)}
+          className="btn-primary flex items-center gap-2 text-sm ml-auto"><Plus size={15}/> Nouvelle norme</button>
+      </div>
+
+      {msg && <div className="text-sm text-green-600 font-medium bg-green-50 border border-green-200 px-4 py-2 rounded-lg">{msg}</div>}
+
+      {showForm && (
+        <div className="card p-4 border-l-4 border-l-brand">
+          <h3 className="font-bold text-gray-800 dark:text-white mb-3">Nouvelle norme</h3>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <div>
+              <label className="label">Type eau *</label>
+              <select className="input" value={form.type_eau} onChange={e => setForm(f=>({...f,type_eau:e.target.value,parametre:PARAMS[e.target.value]?.[0]||''}))}>
+                {TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="label">Paramètre *</label>
+              <select className="input" value={form.parametre} onChange={e => setForm(f=>({...f,parametre:e.target.value,unite:UNITE_MAP[e.target.value]||''}))}>
+                {(PARAMS[form.type_eau]||[]).map(p => <option key={p} value={p}>{PARAM_LABELS[p]||p}</option>)}
+              </select>
+            </div>
+            <div><label className="label">Norme max</label><input type="number" step="0.01" className="input" value={form.norme_max||''} onChange={e=>setForm(f=>({...f,norme_max:e.target.value}))} placeholder="—"/></div>
+            <div><label className="label">Limite alerte</label><input type="number" step="0.01" className="input" value={form.la||''} onChange={e=>setForm(f=>({...f,la:e.target.value}))} placeholder="—"/></div>
+            <div><label className="label">Limite action</label><input type="number" step="0.01" className="input" value={form.lac||''} onChange={e=>setForm(f=>({...f,lac:e.target.value}))} placeholder="—"/></div>
+          </div>
+          <div style={{gridColumn:'span 5'}} className="mt-2">
+            <label className="label">Unité</label>
+            <input className="input w-32" value={form.unite} onChange={e=>setForm(f=>({...f,unite:e.target.value}))} placeholder="µS/cm"/>
+          </div>
+          <div className="flex gap-2 mt-3">
+            <button onClick={addNorme} disabled={saving} className="btn-primary text-sm flex items-center gap-2">
+              <Save size={14}/> {saving ? 'Ajout...' : 'Ajouter'}
+            </button>
+            <button onClick={() => setShowForm(false)} className="btn-outline text-sm">Annuler</button>
+          </div>
+        </div>
+      )}
+
+      <div className="card overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 dark:bg-gray-800/50">
+            <tr>{['Paramètre','Norme Ph.Eur','Limite alerte','Limite action','Unité','Actions'].map(h => (
+              <th key={h} className="text-left text-xs font-bold text-gray-500 uppercase tracking-wide px-4 py-3 whitespace-nowrap">{h}</th>
+            ))}</tr>
+          </thead>
+          <tbody className="divide-y divide-gray-50 dark:divide-gray-800">
+            {filtered.map(n => {
+              const ed = editing[n.id]
+              return (
+                <tr key={n.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/40">
+                  <td className="px-4 py-3 font-medium">{PARAM_LABELS[n.parametre]||n.parametre}</td>
+                  {ed ? (
+                    <>
+                      <td className="px-4 py-2"><input type="number" step="0.01" className="input w-24 py-1 text-sm" defaultValue={n.norme_max} onChange={e=>setEditing(prev=>({...prev,[n.id]:{...prev[n.id],norme_max:e.target.value}})}/></td>
+                      <td className="px-4 py-2"><input type="number" step="0.01" className="input w-24 py-1 text-sm" defaultValue={n.la} onChange={e=>setEditing(prev=>({...prev,[n.id]:{...prev[n.id],la:e.target.value}})}/></td>
+                      <td className="px-4 py-2"><input type="number" step="0.01" className="input w-24 py-1 text-sm" defaultValue={n.lac} onChange={e=>setEditing(prev=>({...prev,[n.id]:{...prev[n.id],lac:e.target.value}})}/></td>
+                      <td className="px-4 py-2"><input className="input w-20 py-1 text-sm" defaultValue={n.unite} onChange={e=>setEditing(prev=>({...prev,[n.id]:{...prev[n.id],unite:e.target.value}})}/></td>
+                      <td className="px-4 py-2">
+                        <div className="flex gap-2">
+                          <button onClick={() => saveNorme(n.id)} className="text-xs bg-green-500 text-white px-2 py-1 rounded-lg flex items-center gap-1"><Save size={11}/> OK</button>
+                          <button onClick={() => setEditing(prev=>{const e={...prev};delete e[n.id];return e})} className="text-xs text-gray-400 px-2 py-1">✕</button>
+                        </div>
+                      </td>
+                    </>
+                  ) : (
+                    <>
+                      <td className="px-4 py-3 font-mono font-bold">{n.norme_max ?? '—'}</td>
+                      <td className="px-4 py-3 font-mono" style={{color:'#d97706'}}>{n.la ?? '—'}</td>
+                      <td className="px-4 py-3 font-mono" style={{color:'#dc2626'}}>{n.lac ?? '—'}</td>
+                      <td className="px-4 py-3 text-xs text-gray-400">{n.unite||'—'}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex gap-2">
+                          <button onClick={() => setEditing(prev=>({...prev,[n.id]:{norme_max:n.norme_max,la:n.la,lac:n.lac,unite:n.unite}}))}
+                            className="text-xs text-gray-400 hover:text-brand flex items-center gap-1 px-2 py-1 rounded border border-gray-200 hover:border-brand">
+                            ✏️ Modifier
+                          </button>
+                          <button onClick={() => deleteNorme(n.id, PARAM_LABELS[n.parametre]||n.parametre)}
+                            className="text-xs text-red-400 hover:text-red-600 flex items-center gap-1 px-2 py-1 rounded border border-gray-200 hover:border-red-300">
+                            <Trash2 size={12}/> Supprimer
+                          </button>
+                        </div>
+                      </td>
+                    </>
+                  )}
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+        {filtered.length === 0 && (
+          <div className="text-center text-gray-400 py-8 text-sm">Aucune norme configurée pour {selType}</div>
+        )}
       </div>
     </div>
   )
@@ -880,8 +1101,9 @@ const TABS = [
   { id: 'zones',   label: '🏭 Zones' },
   { id: 'salles',  label: '🚪 Salles' },
   { id: 'points',  label: '📍 Points & Localisations' },
-  { id: 'normes',  label: '📐 Normes' },
-  { id: 'points_eaux', label: '💧 Points Eaux' },
+  { id: 'normes',        label: '📐 Normes' },
+  { id: 'points_eau',    label: '💧 Points Eaux' },
+  { id: 'normes_eau',    label: '📋 Normes Eaux' },
 ]
 
 export default function Admin() {
@@ -906,8 +1128,9 @@ export default function Admin() {
       {tab === 'zones'  && <ZonesTab/>}
       {tab === 'salles' && <SallesTab/>}
       {tab === 'points' && <PointsTab/>}
-      {tab === 'normes' && <NormesTab/>}
-      {tab === 'points_eaux' && <PointsEauxTab/>}
+      {tab === 'normes'     && <NormesTab/>}
+      {tab === 'points_eau'  && <PointsEauTab/>}
+      {tab === 'normes_eau'  && <NormesEauTab/>}
     </div>
   )
 }
