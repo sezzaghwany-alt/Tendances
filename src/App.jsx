@@ -17,6 +17,9 @@ import Saisie2026 from '@/pages/Saisie2026'
 import SaisiePersonnel from '@/pages/SaisiePersonnel'
 import Backup from '@/pages/Backup'
 import SaisieEaux from '@/pages/SaisieEaux'
+import TendancesEaux from '@/pages/TendancesEaux'
+import AlertesEaux from '@/pages/AlertesEaux'
+import AlertesPersonnel from '@/pages/AlertesPersonnel'
 
 function Layout() {
   const [alertCount, setAlertCount] = useState(0)
@@ -51,6 +54,9 @@ function Layout() {
           <Route path="/saisie-personnel" element={<ProtectedRoute requireOperateur><SaisiePersonnel /></ProtectedRoute>} />
           <Route path="/backup" element={<ProtectedRoute requireAdmin><Backup /></ProtectedRoute>} />
           <Route path="/saisie-eaux" element={<ProtectedRoute requireOperateur><SaisieEaux /></ProtectedRoute>} />
+          <Route path="/tendances-eaux"    element={<TendancesEaux />} />
+          <Route path="/alertes-eaux"       element={<AlertesEaux />} />
+          <Route path="/alertes-personnel"  element={<AlertesPersonnel />} />
           <Route path="/alertes"   element={<Alertes />} />
           <Route path="/saisie"    element={<ProtectedRoute requireOperateur><Saisie /></ProtectedRoute>} />
           <Route path="/audit"     element={<ProtectedRoute requireAdmin><AuditTrail /></ProtectedRoute>} />
