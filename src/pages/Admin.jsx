@@ -471,7 +471,7 @@ function NormesTab() {
                 <td className="px-4 py-3 font-mono text-xs">{n.type_controle}</td>
                 {['norme','alerte','action'].map(f=>(
                   <td key={f} className="px-4 py-3">
-                    {ed ? <input type="number" className="input w-20 py-1 text-sm" defaultValue={n[f]} onChange={e=>setEditing(prev=>({...prev,[n.id]:{...prev[n.id],[f]:e.target.value}}))}/>
+                    {ed ? <input type="number" className="input w-20 py-1 text-sm" defaultValue={n[f]} onChange={e => { const v=e.target.value; const field=f; setEditing(prev => { const cur={...prev}; cur[n.id]={...cur[n.id],[field]:v}; return cur }) }}/>
                        : <span className="font-mono font-bold">{n[f]}</span>}
                   </td>
                 ))}
@@ -479,7 +479,7 @@ function NormesTab() {
                 <td className="px-4 py-3">
                   {ed
                     ? <button onClick={()=>saveNorme(n.id)} className="text-xs bg-green-500 text-white px-3 py-1 rounded-lg flex items-center gap-1"><Save size={12}/> Sauver</button>
-                    : <button onClick={()=>setEditing(prev=>({...prev,[n.id]:{norme:n.norme,alerte:n.alerte,action:n.action}}))} className="text-xs text-gray-400 hover:text-brand">Modifier</button>
+                    : <button onClick={() => { setEditing(prev => { const cur={...prev}; cur[n.id]={norme:n.norme,alerte:n.alerte,action:n.action}; return cur }) }} className="text-xs text-gray-400 hover:text-brand">Modifier</button>
                   }
                 </td>
               </tr>
@@ -1051,10 +1051,10 @@ function NormesEauTab() {
                   <td className="px-4 py-3 font-medium">{PARAM_LABELS[n.parametre]||n.parametre}</td>
                   {ed ? (
                     <>
-                      <td className="px-4 py-2"><input type="number" step="0.01" className="input w-24 py-1 text-sm" defaultValue={n.norme_max} onChange={e=>setEditing(prev=>({...prev,[n.id]:{...prev[n.id],norme_max:e.target.value}}))}/></td>
-                      <td className="px-4 py-2"><input type="number" step="0.01" className="input w-24 py-1 text-sm" defaultValue={n.la} onChange={e=>setEditing(prev=>({...prev,[n.id]:{...prev[n.id],la:e.target.value}}))}/></td>
-                      <td className="px-4 py-2"><input type="number" step="0.01" className="input w-24 py-1 text-sm" defaultValue={n.lac} onChange={e=>setEditing(prev=>({...prev,[n.id]:{...prev[n.id],lac:e.target.value}}))}/></td>
-                      <td className="px-4 py-2"><input className="input w-20 py-1 text-sm" defaultValue={n.unite} onChange={e=>setEditing(prev=>({...prev,[n.id]:{...prev[n.id],unite:e.target.value}}))}/></td>
+                      <td className="px-4 py-2"><input type="number" step="0.01" className="input w-24 py-1 text-sm" defaultValue={n.norme_max} onChange={e => { const v=e.target.value; setEditing(prev => { const cur={...prev}; cur[n.id]={...cur[n.id],norme_max:v}; return cur }) }}/></td>
+                      <td className="px-4 py-2"><input type="number" step="0.01" className="input w-24 py-1 text-sm" defaultValue={n.la} onChange={e => { const v=e.target.value; setEditing(prev => { const cur={...prev}; cur[n.id]={...cur[n.id],la:v}; return cur }) }}/></td>
+                      <td className="px-4 py-2"><input type="number" step="0.01" className="input w-24 py-1 text-sm" defaultValue={n.lac} onChange={e => { const v=e.target.value; setEditing(prev => { const cur={...prev}; cur[n.id]={...cur[n.id],lac:v}; return cur }) }}/></td>
+                      <td className="px-4 py-2"><input className="input w-20 py-1 text-sm" defaultValue={n.unite} onChange={e => { const v=e.target.value; setEditing(prev => { const cur={...prev}; cur[n.id]={...cur[n.id],unite:v}; return cur }) }}/></td>
                       <td className="px-4 py-2">
                         <div className="flex gap-2">
                           <button onClick={() => saveNorme(n.id)} className="text-xs bg-green-500 text-white px-2 py-1 rounded-lg flex items-center gap-1"><Save size={11}/> OK</button>
@@ -1070,7 +1070,7 @@ function NormesEauTab() {
                       <td className="px-4 py-3 text-xs text-gray-400">{n.unite||'—'}</td>
                       <td className="px-4 py-3">
                         <div className="flex gap-2">
-                          <button onClick={() => setEditing(prev=>({...prev,[n.id]:{norme_max:n.norme_max,la:n.la,lac:n.lac,unite:n.unite}}))}
+                          <button onClick={() => { setEditing(prev => { const cur={...prev}; cur[n.id]={norme_max:n.norme_max,la:n.la,lac:n.lac,unite:n.unite}; return cur }) }}
                             className="text-xs text-gray-400 hover:text-brand flex items-center gap-1 px-2 py-1 rounded border border-gray-200 hover:border-brand">
                             ✏️ Modifier
                           </button>
