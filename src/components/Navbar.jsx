@@ -12,7 +12,6 @@ const links = [
   { to: '/saisie-personnel', label: '🧤 Saisie Personnel',icon: TrendingUp,     roles: ['admin','operateur'] },
   { to: '/personnel',        label: 'Personnel',         icon: TrendingUp,      roles: ['admin','operateur','lecteur'] },
   { to: '/alertes',          label: 'Alertes',           icon: AlertTriangle,   roles: ['admin','operateur','lecteur'] },
-  { to: '/saisie',           label: 'Saisie',            icon: PenLine,         roles: ['admin','operateur'] },
   { to: '/backup',           label: '💾 Sauvegarde',     icon: ClipboardList,   roles: ['admin'] },
   { to: '/audit',            label: 'Audit Trail',       icon: ClipboardList,   roles: ['admin'] },
   { to: '/admin',            label: 'Administration',    icon: Settings,        roles: ['admin'] },
