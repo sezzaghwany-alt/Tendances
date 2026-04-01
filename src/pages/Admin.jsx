@@ -705,6 +705,175 @@ function PointsTab() {
     </div>
   )
 }
+
+// ── Points de contrôle (CRUD complet) ────────────────────────────────────────
+function PointsEauxTab() {
+  const [points, setPoints] = useState([])
+  const [zones,  setZones]  = useState([])
+  const [loading, setLoading] = useState(true)
+  const [selZone, setSelZone] = useState('ALL')
+  const [editId,  setEditId]  = useState(null)
+  const [showForm, setShowForm] = useState(false)
+  const [editForm, setEditForm] = useState({})
+  const [saving, setSaving] = useState(false)
+  const EMPTY = { zone_id:'', code:'', localisation:'', type_controle:'ACTIF', classe:'C', ecran:'', actif:true }
+  const [form, setForm] = useState(EMPTY)
+
+  useEffect(() => {
+    Promise.all([
+      supabase.from('zones').select('*').eq('actif',true).order('label'),
+      supabase.from('points_controle').select('*, zones(label,code), salles(label)').order('point'),
+    ]).then(([z,p]) => {
+      setZones(z.data||[])
+      setPoints(p.data||[])
+      setLoading(false)
+    })
+  }, [])
+
+  const filtered = selZone==='ALL' ? points : points.filter(p=>p.zones?.code===selZone)
+
+  async function addPoint() {
+    if (!form.zone_id || !form.code) return
+    setSaving(true)
+    const { data } = await supabase.from('points_controle').insert(form).select('*, zones(label,code), salles(label)')
+    if (data) { setPoints(prev=>[...prev,...data]); setShowForm(false); setForm(EMPTY) }
+    setSaving(false)
+  }
+
+  async function saveEdit(id) {
+    setSaving(true)
+    const { localisation, type_controle, classe, ecran, actif } = editForm
+    await supabase.from('points_controle').update({ localisation, type_controle, classe, ecran, actif }).eq('id',id)
+    setPoints(prev=>prev.map(p=>p.id===id?{...p,...editForm}:p))
+    setEditId(null); setSaving(false)
+  }
+
+  async function deletePoint(id, code) {
+    if (!window.confirm(`Supprimer le point ${code} ? Cette action est irréversible.`)) return
+    await supabase.from('points_controle').delete().eq('id',id)
+    setPoints(prev=>prev.filter(p=>p.id!==id))
+  }
+
+  async function togglePoint(id, actif) {
+    await supabase.from('points_controle').update({ actif: !actif }).eq('id',id)
+    setPoints(prev=>prev.map(p=>p.id===id?{...p,actif:!actif}:p))
+  }
+
+  if (loading) return <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-brand mx-auto mt-10"/>
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3 flex-wrap">
+        <select value={selZone} onChange={e=>setSelZone(e.target.value)} className="input py-1.5 text-sm w-52">
+          <option value="ALL">Toutes les zones</option>
+          {zones.map(z=><option key={z.code} value={z.code}>{z.icon} {z.label}</option>)}
+        </select>
+        <span className="text-xs text-gray-400">{filtered.length} point(s)</span>
+        <button onClick={()=>setShowForm(!showForm)} className="btn-primary flex items-center gap-2 text-sm ml-auto"><Plus size={15}/> Nouveau point</button>
+      </div>
+
+      {showForm && (
+        <div className="card p-4 border-l-4 border-l-brand">
+          <h3 className="font-bold text-gray-800 dark:text-white mb-3 flex items-center gap-2"><Plus size={15}/> Nouveau point de contrôle</h3>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="label">Zone *</label>
+              <select className="input" value={form.zone_id} onChange={e=>setForm(f=>({...f,zone_id:e.target.value}))}>
+                <option value="">— Zone —</option>
+                {zones.map(z=><option key={z.id} value={z.id}>{z.label}</option>)}
+              </select>
+            </div>
+            <div><label className="label">Code point *</label><input className="input" value={form.code} onChange={e=>setForm(f=>({...f,code:e.target.value.toUpperCase()}))} placeholder="Ex: A1, P3, S7"/></div>
+            <div><label className="label">Localisation</label><input className="input" value={form.localisation} onChange={e=>setForm(f=>({...f,localisation:e.target.value}))} placeholder="Description physique"/></div>
+            <div>
+              <label className="label">Type</label>
+              <select className="input" value={form.type_controle} onChange={e=>setForm(f=>({...f,type_controle:e.target.value}))}>
+                <option value="ACTIF">ACTIF</option>
+                <option value="PASSIF">PASSIF</option>
+                <option value="SURFACE">SURFACE</option>
+              </select>
+            </div>
+            <div>
+              <label className="label">Classe</label>
+              <select className="input" value={form.classe} onChange={e=>setForm(f=>({...f,classe:e.target.value}))}>
+                <option value="A">A</option><option value="B">B</option><option value="C">C</option><option value="D">D</option>
+              </select>
+            </div>
+            <div><label className="label">Écran</label><input className="input" value={form.ecran} onChange={e=>setForm(f=>({...f,ecran:e.target.value}))} placeholder="Ex: Ecran1"/></div>
+          </div>
+          <div className="flex gap-2 mt-3">
+            <button onClick={addPoint} disabled={saving} className="btn-primary text-sm flex items-center gap-2"><Save size={14}/> {saving?'Ajout...':'Ajouter'}</button>
+            <button onClick={()=>setShowForm(false)} className="btn-outline text-sm">Annuler</button>
+          </div>
+        </div>
+      )}
+
+      <div className="card overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 dark:bg-gray-800/50">
+            <tr>{['Zone','Code','Type','Classe','Écran','Localisation','Statut','Actions'].map(h=>(
+              <th key={h} className="text-left text-xs font-bold text-gray-500 uppercase tracking-wide px-3 py-3 whitespace-nowrap">{h}</th>
+            ))}</tr>
+          </thead>
+          <tbody className="divide-y divide-gray-50 dark:divide-gray-800">
+            {filtered.map(pt=>(
+              <tr key={pt.id} className={`hover:bg-gray-50 dark:hover:bg-gray-800/40 ${!pt.actif?'opacity-40':''}`}>
+                {editId===pt.id ? (
+                  <>
+                    <td className="px-3 py-2 text-xs text-gray-400">{pt.zones?.label}</td>
+                    <td className="px-3 py-2 font-mono font-bold text-brand">{pt.point}</td>
+                    <td className="px-3 py-2">
+                      <select className="input py-1 text-xs w-24" value={editForm.type_controle} onChange={e=>setEditForm(f=>({...f,type_controle:e.target.value}))}>
+                        <option value="ACTIF">ACTIF</option><option value="PASSIF">PASSIF</option><option value="SURFACE">SURFACE</option>
+                      </select>
+                    </td>
+                    <td className="px-3 py-2">
+                      <select className="input py-1 text-xs w-16" value={editForm.classe} onChange={e=>setEditForm(f=>({...f,classe:e.target.value}))}>
+                        <option>A</option><option>B</option><option>C</option><option>D</option>
+                      </select>
+                    </td>
+                    <td className="px-3 py-2"><input className="input py-1 text-xs w-20" value={editForm.ecran||''} onChange={e=>setEditForm(f=>({...f,ecran:e.target.value}))}/></td>
+                    <td className="px-3 py-2"><input className="input py-1 text-xs w-48" value={editForm.localisation||''} onChange={e=>setEditForm(f=>({...f,localisation:e.target.value}))}/></td>
+                    <td className="px-3 py-2 text-xs text-gray-400">—</td>
+                    <td className="px-3 py-2">
+                      <div className="flex gap-1">
+                        <button onClick={()=>saveEdit(pt.id)} className="text-xs bg-green-500 text-white px-2 py-1 rounded flex items-center gap-1"><Save size={11}/> OK</button>
+                        <button onClick={()=>setEditId(null)} className="text-xs text-gray-400 px-2 py-1">✕</button>
+                      </div>
+                    </td>
+                  </>
+                ) : (
+                  <>
+                    <td className="px-3 py-2 text-xs text-gray-500">{pt.zones?.label}</td>
+                    <td className="px-3 py-2 font-mono font-bold text-brand">{pt.point}</td>
+                    <td className="px-3 py-2 text-xs font-mono">{pt.type_controle}</td>
+                    <td className="px-3 py-2 text-xs">Cl.{pt.classe}</td>
+                    <td className="px-3 py-2 text-xs text-gray-400 font-mono">{pt.ecran||'—'}</td>
+                    <td className="px-3 py-2 text-xs text-gray-500 max-w-xs truncate">{pt.localisation||'—'}</td>
+                    <td className="px-3 py-2">
+                      <button onClick={()=>togglePoint(pt.id,pt.actif)} className={`text-xs px-2 py-0.5 rounded-full font-bold ${pt.actif?'bg-green-100 text-green-700':'bg-gray-100 text-gray-500'}`}>
+                        {pt.actif?'Actif':'Inactif'}
+                      </button>
+                    </td>
+                    <td className="px-3 py-2">
+                      <div className="flex gap-1">
+                        <button onClick={()=>{setEditId(pt.id);setEditForm({localisation:pt.localisation,type_controle:pt.type_controle,classe:pt.classe,ecran:pt.ecran||'',actif:pt.actif})}}
+                          className="text-xs text-gray-400 hover:text-brand px-2 py-1 rounded border border-gray-200 hover:border-brand">✏️</button>
+                        <button onClick={()=>deletePoint(pt.id,pt.point)}
+                          className="text-xs text-red-400 hover:text-red-600 px-2 py-1 rounded border border-gray-200 hover:border-red-300"><Trash2 size={12}/></button>
+                      </div>
+                    </td>
+                  </>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 // ── Page principale ───────────────────────────────────────────────────────────
 const TABS = [
   { id: 'users',   label: '👥 Utilisateurs' },
@@ -712,6 +881,7 @@ const TABS = [
   { id: 'salles',  label: '🚪 Salles' },
   { id: 'points',  label: '📍 Points & Localisations' },
   { id: 'normes',  label: '📐 Normes' },
+  { id: 'points_eaux', label: '💧 Points Eaux' },
 ]
 
 export default function Admin() {
@@ -737,6 +907,7 @@ export default function Admin() {
       {tab === 'salles' && <SallesTab/>}
       {tab === 'points' && <PointsTab/>}
       {tab === 'normes' && <NormesTab/>}
+      {tab === 'points_eaux' && <PointsEauxTab/>}
     </div>
   )
 }
