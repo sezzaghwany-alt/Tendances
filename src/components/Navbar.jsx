@@ -10,7 +10,7 @@ const links = [
   { to: '/points',           label: 'Points/Salles',     icon: TrendingUp,      roles: ['admin','operateur','lecteur'] },
   { to: '/saisie2026',       label: '✏️ Saisie 2026',    icon: TrendingUp,      roles: ['admin','operateur'] },
   { to: '/saisie-personnel', label: '🧤 Saisie Personnel',icon: TrendingUp,     roles: ['admin','operateur'] },
-  { to: '/saisieeaux',       label: '✏️ Saisie Eaux 2026',    icon: TrendingUp,      roles: ['admin','operateur'] },
+  { to: '/saisie-eaux',       label: '✏️ Saisie Eaux 2026',    icon: TrendingUp,      roles: ['admin','operateur'] },
   { to: '/personnel',        label: 'Personnel',         icon: TrendingUp,      roles: ['admin','operateur','lecteur'] },
   { to: '/alertes',          label: 'Alertes',           icon: AlertTriangle,   roles: ['admin','operateur','lecteur'] },
   { to: '/backup',           label: '💾 Sauvegarde',     icon: ClipboardList,   roles: ['admin'] },
