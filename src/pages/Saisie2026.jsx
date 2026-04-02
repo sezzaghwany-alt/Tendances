@@ -4,7 +4,7 @@ import { useAuth } from '@/contexts/AuthContext'
 
 const ZONE_ECRANS = {
   LABO_MICRO:  { label:'Laboratoire Microbiologie', icon:'🧫' , color:'#7c3aed', ecrans:['Ecran1','Ecran2','Ecran3'] },
-  PREPARATION: { label:'Préparation Poches Stériles',    type:'img',   val:'/icon_poches.webp', color:'#1d6fa4', ecrans:['Ecran4','Ecran5','Ecran6'] },
+  PREPARATION: { label:'Préparation Poches Stériles',    icon:'🔬',   val:'/icon_poches.webp', color:'#1d6fa4', ecrans:['Ecran4','Ecran5','Ecran6'] },
   PRELEVEMENT: { label:'Zone Prélèvement',               icon:'🔬', color:'#0d9488', ecrans:['Ecran7'] },
   CARTOUCHE:   { label:'Zone Cartouche',                 icon:'⚗️', color:'#dc2626', ecrans:['Ecran8'] },
   DIALYSE:     { label:'Zone Dialyse',                   icon:'💧', color:'#0284c7', ecrans:['Ecran9'] },
