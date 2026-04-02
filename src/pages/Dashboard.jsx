@@ -415,18 +415,26 @@ export default function Dashboard() {
                   </div>
                 </div>
               ) : (
-                <div className="grid grid-cols-3 gap-2 mt-3">
-                  {[
-                    { v: z.conformes, l:'Conformes', c:'text-green-600' },
-                    { v: z.alertes,   l:'Alertes',   c:'text-amber-500' },
-                    { v: z.actions + z.nc, l:'Actions', c:'text-red-600' },
-                  ].map((s, i) => (
-                    <div key={i} className="bg-gray-50 dark:bg-gray-800 rounded-lg p-2 text-center">
-                      <div className={`font-extrabold font-mono text-lg ${s.c}`}>{s.v}</div>
-                      <div className="text-[10px] text-gray-400 font-semibold">{s.l}</div>
-                    </div>
-                  ))}
-                </div>
+                <>
+                  <div className="grid grid-cols-3 gap-2 mt-3">
+                    {[
+                      { v: z.conformes,        l:'Conformes', c:'text-green-600' },
+                      { v: z.alertes,          l:'Alertes',   c:'text-amber-500' },
+                      { v: z.actions + z.nc,   l:'Actions',   c:'text-red-600' },
+                    ].map((s, i) => (
+                      <div key={i} className="bg-gray-50 dark:bg-gray-800 rounded-lg p-2 text-center">
+                        <div className={`font-extrabold font-mono text-lg ${s.c}`}>{s.v}</div>
+                        <div className="text-[10px] text-gray-400 font-semibold">{s.l}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex justify-between items-center pt-2 mt-1 border-t border-gray-100 dark:border-gray-800">
+                    <span className="text-xs text-gray-400">{z.total} mesures</span>
+                    <span className="text-sm font-extrabold" style={{ color: z.tx >= 95 ? '#16a34a' : z.tx >= 80 ? '#d97706' : '#dc2626' }}>
+                      {z.tx}%
+                    </span>
+                  </div>
+                </>
               )}
             </div>
           ))}
