@@ -44,7 +44,7 @@ function Layout() {
   return (
     <div className="flex min-h-screen">
       <Navbar alertCount={alertCount} />
-      <main className="flex-1 p-8 overflow-auto">
+      <main className="flex-1 p-8 overflow-y-auto" style={{ height: "100vh" }}>
         <Routes>
           <Route path="/"          element={<Dashboard />} />
           <Route path="/tendances" element={<Tendances />} />
