@@ -30,11 +30,16 @@ function ZoneIcon({ code, size = 28 }) {
 
 function getStatut(germes, normes) {
   if (!normes) return 'C'
-  if (normes.norme > 0 && germes >= normes.norme)   return 'NC'
+  if (normes.norme  > 0 && germes >= normes.norme)  return 'NC'
   if (normes.action > 0 && germes >= normes.action) return 'NC_ACTION'
   if (normes.alerte > 0 && germes >= normes.alerte) return 'NC_ALERTE'
   return 'C'
 }
+
+// Taux de conformité : conforme = germes strictement < alerte
+// NC alerte = alerte <= germes < action
+// NC action = action <= germes < norme
+// NC = germes >= norme
 
 function getTrimestreRange(t, annee) {
   const a = annee || new Date().getFullYear()
@@ -53,7 +58,7 @@ export default function Dashboard() {
   const [controles,setControles]= useState([])
   const [loading,  setLoading]  = useState(true)
 
-  const [annee,           setAnnee]           = useState(new Date().getFullYear())
+  const [annee,           setAnnee]           = useState(2025)  // Démarrer sur 2025
   const [filtreZone,      setFiltreZone]      = useState('ALL')
   const [filtreClasse,    setFiltreClasse]    = useState('ALL')
   const [filtreType,      setFiltreType]      = useState('ALL')
@@ -110,8 +115,8 @@ export default function Dashboard() {
   function handleAnneeChange(a) {
     setAnnee(a)
     setFiltreTrimestre('ALL')
-    setDateDebut(`${a}-01-01`)
-    setDateFin(`${a}-12-31`)
+    setDateDebut('')
+    setDateFin('')
   }
 
   function handleDateChange(field, val) {
@@ -123,10 +128,13 @@ export default function Dashboard() {
   const normesMap = useMemo(() => {
     const map = {}
     normes.forEach(n => {
-      const key = `${n.zones?.code}_${n.type_controle}`
+      const code = n.zones?.code
+      if (!code) return
+      // Clé principale : zone_code + type
+      const key = `${code}_${n.type_controle}`
       if (!map[key]) map[key] = n
-      // Aussi stocker par classe si disponible
-      if (n.classe) map[`${n.zones?.code}_${n.type_controle}_${n.classe}`] = n
+      // Clé avec classe
+      if (n.classe) map[`${code}_${n.type_controle}_${n.classe}`] = n
     })
     return map
   }, [normes])
@@ -140,18 +148,21 @@ export default function Dashboard() {
   const enriched = useMemo(() =>
     controles.map(c => ({
       ...c,
-      statut: getStatut(c.germes, getNormes(c.zones?.code, c.type_controle, c.classe)),
-      // Normaliser les zones poches
       zoneGroupCode: ZONES_POCHES.includes(c.zones?.code) ? 'PREPARATION' : c.zones?.code,
+      statut: getStatut(
+        c.germes,
+        getNormes(c.zones?.code, c.type_controle, c.classe)
+      ),
     }))
   , [controles, normesMap])
 
   // Filtre par année automatique si pas de date personnalisée
   const filtered = useMemo(() => enriched.filter(c => {
-    const effDateDebut = dateDebut || `${annee}-01-01`
-    const effDateFin   = dateFin   || `${annee}-12-31`
-    if (c.date_controle < effDateDebut) return false
-    if (c.date_controle > effDateFin)   return false
+    // Filtrer par année sélectionnée (ou par dates personnalisées)
+    const yr = c.date_controle?.slice(0, 4)
+    if (dateDebut && c.date_controle < dateDebut) return false
+    if (dateFin   && c.date_controle > dateFin)   return false
+    if (!dateDebut && !dateFin && String(annee) !== yr) return false
 
     const codeZone = c.zoneGroupCode
     if (filtreZone !== 'ALL' && codeZone !== filtreZone) return false
@@ -270,7 +281,7 @@ export default function Dashboard() {
       </div>
 
       {/* ── Filtres sticky ───────────────────────────────────────────────── */}
-      <div ref={filtreRef} className="card p-4 space-y-3 sticky top-0 z-20 shadow-sm">
+      <div ref={filtreRef} className="card p-4 space-y-3 sticky top-0 z-30" style={{ boxShadow:"0 2px 12px rgba(0,0,0,.08)", backdropFilter:"blur(8px)" }}>
 
         {/* Ligne 1 : Année + Zone + Classe + Type */}
         <div className="flex flex-wrap gap-3 items-center">
