@@ -472,16 +472,36 @@ export default function PointsParSalle() {
   const sallesZone = useMemo(() => {
     // Filtrer par zone_id (plus fiable que la jointure FK)
     const zoneIds = new Set(zones.filter(z => zoneSourceCodes.includes(z.code)).map(z => z.id))
-    return salles.filter(s => {
-      // Double check : via zone_id ou via zones.code
+    const sallesReelles = salles.filter(s => {
       const byId   = s.zone_id   && zoneIds.has(s.zone_id)
       const byCode = s.zones?.code && zoneSourceCodes.includes(s.zones.code)
       return byId || byCode
     })
-  }, [salles, zones, zoneSourceCodes])
+    // Ajouter une salle virtuelle pour les contrôles sans salle_id
+    const sansSalle = controles.filter(c => !c.salle_id && zoneIds.has && zoneSourceCodes.includes(
+      zones.find(z => z.id === c.zone_id)?.code
+    ))
+    if (sansSalle.length > 0) {
+      const classesMaj = [...new Set(sansSalle.map(c => c.classe).filter(Boolean))].sort()
+      sallesReelles.push({
+        id: '__sans_salle__',
+        label: 'Contrôles hors salle',
+        zone_id: null,
+        isSansSalle: true,
+        classesMaj,
+      })
+    }
+    return sallesReelles
+  }, [salles, zones, zoneSourceCodes, controles])
 
   function getClasseSalle(salleId) {
-    // Classe majoritaire dans les controles de cette salle
+    if (salleId === '__sans_salle__') {
+      const mesures = controles.filter(c => !c.salle_id).map(c => c.classe).filter(Boolean)
+      if (!mesures.length) return 'C'
+      const freq = {}
+      mesures.forEach(cl => { freq[cl] = (freq[cl]||0)+1 })
+      return Object.entries(freq).sort((a,b) => b[1]-a[1])[0][0]
+    }
     const mesures = controles.filter(c => c.salle_id === salleId).map(c => c.classe).filter(Boolean)
     if (!mesures.length) return 'D'
     const freq = {}
@@ -675,7 +695,9 @@ export default function PointsParSalle() {
       {!loadingData && sallesFiltrees.map(salle => {
         const classeSalle = getClasseSalle(salle.id)
         if (selClasse !== 'ALL' && classeSalle !== selClasse) return null
-        const dataSalle = dataFiltered.filter(c => c.salle_id === salle.id)
+        const dataSalle = salle.isSansSalle
+          ? dataFiltered.filter(c => !c.salle_id)
+          : dataFiltered.filter(c => c.salle_id === salle.id)
         if (!dataSalle.length) return null
         const n = getNormes(classeSalle)
 
