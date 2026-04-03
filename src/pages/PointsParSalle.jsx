@@ -348,7 +348,7 @@ export default function PointsParSalle() {
   useEffect(() => {
     Promise.all([
       supabase.from('zones').select('*').eq('actif', true),
-      supabase.from('salles').select('*, zones(code)').eq('actif', true),
+      supabase.from('salles').select('id, label, classe, zone_id, actif, zones(code)').eq('actif', true),
       supabase.from('normes').select('*, zones(code)'),
       supabase.from('points_controle').select('zone_id, point, type_controle, localisation, classe'),
     ]).then(([z, s, n, p]) => {
@@ -464,19 +464,35 @@ export default function PointsParSalle() {
   }, [controles, selPeriode, annee])
 
   const sallesZone = useMemo(() => {
+    // Filtrer par zone_id (plus fiable que la jointure FK)
     const zoneIds = new Set(zones.filter(z => zoneSourceCodes.includes(z.code)).map(z => z.id))
     return salles.filter(s => {
-      const zoneCode = s.zones?.code
-      return zoneSourceCodes.includes(zoneCode)
+      // Double check : via zone_id ou via zones.code
+      const byId   = s.zone_id   && zoneIds.has(s.zone_id)
+      const byCode = s.zones?.code && zoneSourceCodes.includes(s.zones.code)
+      return byId || byCode
     })
   }, [salles, zones, zoneSourceCodes])
 
   function getClasseSalle(salleId) {
-    const cls = [...new Set(controles.filter(c=>c.salle_id===salleId).map(c=>c.classe).filter(Boolean))]
-    return cls[0] || 'D'
+    // Utiliser la classe de la salle depuis la table salles si disponible
+    const salleObj = salles.find(s => s.id === salleId)
+    if (salleObj?.classe) return salleObj.classe
+    // Sinon : classe majoritaire dans les controles de cette salle
+    const mesures = controles.filter(c => c.salle_id === salleId).map(c => c.classe).filter(Boolean)
+    if (!mesures.length) return 'D'
+    const freq = {}
+    mesures.forEach(cl => { freq[cl] = (freq[cl] || 0) + 1 })
+    return Object.entries(freq).sort((a,b) => b[1]-a[1])[0][0]
   }
 
-  const classesDispos = useMemo(() => [...new Set(controles.map(c=>c.classe).filter(Boolean))].sort(), [controles])
+  // Classes disponibles : depuis les salles de la zone (pas les controles)
+  const classesDispos = useMemo(() => {
+    const fromSalles = [...new Set(sallesZone.map(s => s.classe).filter(Boolean))].sort()
+    if (fromSalles.length) return fromSalles
+    // Fallback : depuis les controles
+    return [...new Set(controles.map(c => c.classe).filter(Boolean))].sort()
+  }, [sallesZone, controles])
 
   const sallesFiltrees = useMemo(() => {
     if (selClasse === 'ALL') return sallesZone
