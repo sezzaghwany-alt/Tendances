@@ -348,7 +348,7 @@ export default function PointsParSalle() {
   useEffect(() => {
     Promise.all([
       supabase.from('zones').select('*').eq('actif', true),
-      supabase.from('salles').select('id, label, classe, zone_id, actif, zones(code)').eq('actif', true),
+      supabase.from('salles').select('id, label, zone_id, actif, zones(code)').eq('actif', true),
       supabase.from('normes').select('*, zones(code)'),
       supabase.from('points_controle').select('zone_id, point, type_controle, localisation, classe'),
     ]).then(([z, s, n, p]) => {
@@ -425,18 +425,24 @@ export default function PointsParSalle() {
     normes.forEach(n => {
       const code = n.zones?.code
       if (!code) return
-      map[`${code}_${n.type_controle}`] = n
+      // Clé avec classe — toujours stocker
       if (n.classe) map[`${code}_${n.classe}_${n.type_controle}`] = n
+      // Clé sans classe — ne stocker que si pas encore de valeur (évite écrasement B→C→D)
+      const keyFallback = `${code}_${n.type_controle}`
+      if (!map[keyFallback]) map[keyFallback] = n
     })
     return map
   }, [normes])
 
   function getNormes(classe) {
-    // Chercher dans tous les codes sources
     for (const code of zoneSourceCodes) {
-      const n = classe && classe !== 'ALL'
-        ? normesMap[`${code}_${classe}_${selType}`] || normesMap[`${code}_${selType}`]
-        : normesMap[`${code}_${selType}`]
+      // 1. Chercher avec classe explicite
+      if (classe && classe !== 'ALL') {
+        const n = normesMap[`${code}_${classe}_${selType}`]
+        if (n) return n
+      }
+      // 2. Fallback sans classe (prend la première insérée = classe la plus basse)
+      const n = normesMap[`${code}_${selType}`]
       if (n) return n
     }
     return { norme: null, alerte: 0, action: 9999, unite: 'UFC' }
@@ -475,10 +481,7 @@ export default function PointsParSalle() {
   }, [salles, zones, zoneSourceCodes])
 
   function getClasseSalle(salleId) {
-    // Utiliser la classe de la salle depuis la table salles si disponible
-    const salleObj = salles.find(s => s.id === salleId)
-    if (salleObj?.classe) return salleObj.classe
-    // Sinon : classe majoritaire dans les controles de cette salle
+    // Classe majoritaire dans les controles de cette salle
     const mesures = controles.filter(c => c.salle_id === salleId).map(c => c.classe).filter(Boolean)
     if (!mesures.length) return 'D'
     const freq = {}
@@ -486,13 +489,17 @@ export default function PointsParSalle() {
     return Object.entries(freq).sort((a,b) => b[1]-a[1])[0][0]
   }
 
-  // Classes disponibles : depuis les salles de la zone (pas les controles)
+  // Classes disponibles : depuis les normes de la zone sélectionnée
   const classesDispos = useMemo(() => {
-    const fromSalles = [...new Set(sallesZone.map(s => s.classe).filter(Boolean))].sort()
-    if (fromSalles.length) return fromSalles
+    const fromNormes = [...new Set(
+      normes
+        .filter(n => zoneSourceCodes.includes(n.zones?.code) && n.classe)
+        .map(n => n.classe)
+    )].sort()
+    if (fromNormes.length) return fromNormes
     // Fallback : depuis les controles
     return [...new Set(controles.map(c => c.classe).filter(Boolean))].sort()
-  }, [sallesZone, controles])
+  }, [normes, zoneSourceCodes, controles])
 
   const sallesFiltrees = useMemo(() => {
     if (selClasse === 'ALL') return sallesZone
