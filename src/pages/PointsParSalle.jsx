@@ -477,18 +477,16 @@ export default function PointsParSalle() {
       const byCode = s.zones?.code && zoneSourceCodes.includes(s.zones.code)
       return byId || byCode
     })
-    // Ajouter une salle virtuelle pour les contrôles sans salle_id
-    const sansSalle = controles.filter(c => !c.salle_id && zoneIds.has && zoneSourceCodes.includes(
-      zones.find(z => z.id === c.zone_id)?.code
-    ))
+    // Ajouter une salle virtuelle pour les contrôles ACTIF/PASSIF sans salle_id
+    const sansSalle = controles.filter(c =>
+      !c.salle_id && zoneIds.has(c.zone_id)
+    )
     if (sansSalle.length > 0) {
-      const classesMaj = [...new Set(sansSalle.map(c => c.classe).filter(Boolean))].sort()
       sallesReelles.push({
         id: '__sans_salle__',
-        label: 'Contrôles hors salle',
+        label: 'Contrôles Actif & Passif',
         zone_id: null,
         isSansSalle: true,
-        classesMaj,
       })
     }
     return sallesReelles
@@ -528,7 +526,10 @@ export default function PointsParSalle() {
 
   function getPoints(salleId) {
     const prefix = selType==='ACTIF'?'A':selType==='PASSIF'?'P':'S'
-    return [...new Set(dataFiltered.filter(c=>c.salle_id===salleId&&c.type_controle===selType).map(c=>c.point))]
+    const data = salleId === '__sans_salle__'
+      ? dataFiltered.filter(c => !c.salle_id && c.type_controle === selType)
+      : dataFiltered.filter(c => c.salle_id === salleId && c.type_controle === selType)
+    return [...new Set(data.map(c => c.point))]
       .filter(p => p?.startsWith(prefix))
       .sort((a,b)=>{ const na=parseInt(a?.slice(1)),nb=parseInt(b?.slice(1)); return isNaN(na)||isNaN(nb)?a.localeCompare(b):na-nb })
   }
