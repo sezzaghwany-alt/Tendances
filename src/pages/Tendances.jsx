@@ -173,8 +173,10 @@ export default function Tendances() {
     normes.forEach(n => {
       const code = n.zones?.code
       if (!code) return
-      map[`${code}_${n.type_controle}`] = n
       if (n.classe) map[`${code}_${n.classe}_${n.type_controle}`] = n
+      // Fallback sans classe — ne pas écraser (garde la première = classe la + basse)
+      const keyFallback = `${code}_${n.type_controle}`
+      if (!map[keyFallback]) map[keyFallback] = n
     })
     return map
   }, [normes])
