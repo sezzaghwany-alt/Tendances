@@ -239,7 +239,7 @@ function ChartVue1({ salle, data, type, norme, alerte, action, classe, pointsRef
   return (
     <div className="card p-5 mb-4">
       <div className="flex items-center justify-between mb-2">
-        <div className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide">{salle}</div>
+        <div className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide">{salle} · {annee}</div>
         <div className="flex items-center gap-2">
           <span className="text-xs font-medium px-2 py-0.5 rounded" style={{ background:CLASSE_BG[classe]||'#f5f5f5', color:CLASSE_TXT[classe]||'#333' }}>Classe {classe}</span>
           <span className="text-xs text-gray-400">{chartData.pts.length} points · {chartData.isos.length} dates</span>
@@ -332,7 +332,7 @@ export default function PointsParSalle() {
   const [selType,    setSelType]    = useState('ACTIF')
   const [selClasse,  setSelClasse]  = useState('ALL')
   const [selPeriode, setSelPeriode] = useState('ALL')
-  const [selVue,     setSelVue]     = useState('1')
+  const [selVue,     setSelVue]     = useState('3')
   const [selChart3,  setSelChart3]  = useState('bar')
 
   const zonesRef  = useRef(null)
@@ -657,17 +657,6 @@ export default function PointsParSalle() {
         const n = getNormes(classeSalle)
 
         if (selVue === '1') {
-          if (selPeriode === 'ALL') return (
-            <div key={salle.id} className="card p-5 mb-4 border-l-4 border-l-amber-400">
-              <div className="flex items-center gap-3">
-                <span className="text-amber-500">⚠️</span>
-                <div>
-                  <div className="font-semibold text-gray-800 dark:text-white text-sm">{salle.label}</div>
-                  <div className="text-xs text-gray-500 mt-0.5">Sélectionne un trimestre pour afficher la vue globale.</div>
-                </div>
-              </div>
-            </div>
-          )
           return (
             <ChartVue1 key={salle.id}
               salle={salle.label}
