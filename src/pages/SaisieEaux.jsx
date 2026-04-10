@@ -11,7 +11,7 @@ const CONFIG = {
       {
         id: 'LB1',
         label: 'Logbook 1 — Physico-chimie',
-        frequences: ['Journalier','Bimensuel','Mensuel'],
+        frequences: ['Journalier','Hebdomadaire','Bimensuel','Mensuel'],
         parametres: [
           { id:'aspect',       label:'Aspect',        type:'select',
             options:['Limpide et incolore','Trouble','Coloré'],
@@ -35,7 +35,7 @@ const CONFIG = {
       {
         id: 'LB3',
         label: 'Logbook 3 — Endotoxines (LAL)',
-        frequences: ['Journalier','Hebdomadaire','Bimensuel','Mensuel'],
+        frequences: ['LB3_EPU'],
         parametres: [
           { id:'lal', label:'Endotoxines (LAL)', type:'lal',
             spec:'≤ 0,25 UI/mL', unite:'UI/mL',
@@ -53,9 +53,9 @@ const CONFIG = {
       { code:'V436A.1.2', label:'Alim. GVP après pompe',      frequence:'Bimensuel'   },
       { code:'PeS703',    label:'Alimentation distillateur',   frequence:'Mensuel'     },
       { code:'V438A.1.3', label:'Alim. distillateur après pompe', frequence:'Bimensuel'},
-      { code:'PeS707',    label:'Laverie zone dialyse',        frequence:'Bimensuel'   },
-      { code:'PeS709',    label:'Prépa solution dialyse',      frequence:'Hebdomadaire'},
-      { code:'PeS711',    label:'Prépa solution dialyse 2',    frequence:'Hebdomadaire'},
+      { code:'PeS707',    label:'Laverie zone dialyse',        frequence:'Bimensuel', lb3_epu:true   },
+      { code:'PeS709',    label:'Prépa solution dialyse',      frequence:'Hebdomadaire', lb3_epu:true},
+      { code:'PeS711',    label:'Prépa solution dialyse 2',    frequence:'Hebdomadaire', lb3_epu:true},
       { code:'PeS713',    label:'Salle prépa poches stériles', frequence:'Bimensuel'   },
       { code:'PeS715',    label:'Laverie prépa poches',        frequence:'Bimensuel'   },
       { code:'PeS717',    label:'Lavage prod. poches stériles',frequence:'Bimensuel'   },
@@ -71,7 +71,7 @@ const CONFIG = {
       {
         id: 'LB1',
         label: 'Logbook 1 — Physico-chimie',
-        frequences: ['Journalier'],
+        frequences: ['Journalier','Hebdomadaire'],
         parametres: [
           { id:'aspect',       label:'Aspect',       type:'select',
             options:['Limpide et incolore','Trouble','Coloré'],
@@ -280,9 +280,11 @@ export default function SaisieEaux() {
 
   const cfg    = CONFIG[selType]
   const lb     = cfg.logbooks.find(l => l.id === selLB) || cfg.logbooks[0]
-  const points = useMemo(() =>
-    cfg.points.filter(p => lb.frequences.includes(p.frequence))
-  , [selType, selLB, cfg, lb])
+  const points = useMemo(() => {
+    // LB3 EPU : uniquement PeS707, PeS709, PeS711
+    if (selType === 'EPU' && selLB === 'LB3') return cfg.points.filter(p => p.lb3_epu)
+    return cfg.points.filter(p => lb.frequences.includes(p.frequence))
+  }, [selType, selLB, cfg, lb])
 
   // Reset au changement de type
   useEffect(() => {
