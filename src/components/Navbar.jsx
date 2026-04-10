@@ -26,6 +26,7 @@ const BLOCS = [
     roles: ['admin','operateur','lecteur'],
     links: [
       { to: '/saisie-eaux',      label: 'Saisie eaux',       roles: ['admin','operateur'] },
+      { to: '/liste-eaux',       label: 'Liste des données', roles: ['admin','operateur','lecteur'] },
       { to: '/tendances-eaux',   label: 'Tendances eaux',    roles: ['admin','operateur','lecteur'] },
       { to: '/alertes-eaux',     label: 'Alertes eaux',      roles: ['admin','operateur','lecteur'], badge: true },
     ]
