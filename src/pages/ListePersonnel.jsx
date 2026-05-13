@@ -80,7 +80,6 @@ export default function ListePersonnel() {
       germes:         row.germes !== null ? String(row.germes) : '',
       lot:            row.lot            || '',
       produit:        row.produit        || '',
-      zone:           row.zone           || '',
     })
   }
 
@@ -96,7 +95,6 @@ export default function ListePersonnel() {
       germes:        g,
       lot:           editForm.lot     || null,
       produit:       editForm.produit || null,
-      zone:          editForm.zone    || null,
       statut:        newStatut,
     }
 
@@ -215,7 +213,7 @@ export default function ListePersonnel() {
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 dark:bg-gray-800/50">
                   <tr>
-                    {['Date','Opérateur','Position','UFC/boîte','Zone','Lot','Produit','Statut','Actions'].map(h => (
+                    {['Date','Opérateur','Position','UFC/boîte','Lot','Produit','Statut','Actions'].map(h => (
                       <th key={h} className="text-left text-xs font-bold text-gray-500 uppercase tracking-wide px-3 py-3 whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
@@ -276,17 +274,6 @@ export default function ListePersonnel() {
                             <span className={`font-mono font-bold text-xs ${row.germes >= NORME_PERSONNEL ? 'text-red-600' : 'text-green-600'}`}>
                               {row.germes ?? '—'}
                             </span>
-                          )}
-                        </td>
-
-                        {/* Zone */}
-                        <td className="px-3 py-2">
-                          {isEditing ? (
-                            <input type="text" value={editForm.zone}
-                              onChange={e => setEditForm(f=>({...f, zone:e.target.value}))}
-                              className="input py-1 text-xs w-28"/>
-                          ) : (
-                            <span className="text-xs text-gray-400">{row.zone || '—'}</span>
                           )}
                         </td>
 
