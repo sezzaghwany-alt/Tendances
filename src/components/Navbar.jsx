@@ -15,7 +15,8 @@ const BLOCS = [
       { to: '/saisie2026',  label: 'Saisie 2026',    roles: ['admin','operateur'] },
       { to: '/tendances',   label: 'Tendances',       roles: ['admin','operateur','lecteur'] },
       { to: '/points',      label: 'Points / Salles', roles: ['admin','operateur','lecteur'] },
-      { to: '/alertes',     label: 'Alertes',         roles: ['admin','operateur','lecteur'], badge: true },
+      { to: '/alertes',          label: 'Alertes',            roles: ['admin','operateur','lecteur'], badge: true },
+      { to: '/liste-controles',  label: 'Liste des données', roles: ['admin','operateur','lecteur'] },
     ]
   },
   {
@@ -40,7 +41,8 @@ const BLOCS = [
     links: [
       { to: '/saisie-personnel',    label: 'Saisie personnel',    roles: ['admin','operateur'] },
       { to: '/personnel',           label: 'Analyse personnel',   roles: ['admin','operateur','lecteur'] },
-      { to: '/alertes-personnel',   label: 'Alertes personnel',   roles: ['admin','operateur','lecteur'] },
+      { to: '/alertes-personnel',    label: 'Alertes personnel',    roles: ['admin','operateur','lecteur'] },
+      { to: '/liste-personnel',    label: 'Liste des données',    roles: ['admin','operateur','lecteur'] },
     ]
   },
 ]
