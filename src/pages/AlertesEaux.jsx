@@ -10,12 +10,7 @@ const STATUT_CFG = {
   nc:     { label:'Non conforme',   bg:'#fef2f2', border:'#fca5a5', txt:'#991b1b' },
 }
 
-const OOS_STATUS = {
-  'OOS-25/14':  { statut:'Clôturé', color:'#16a34a' },
-  'OOS-25/03':  { statut:'Clôturé', color:'#16a34a' },
-  'OOS-25/02':  { statut:'Clôturé', color:'#16a34a' },
-  'OOS-25/xxx': { statut:'En cours', color:'#d97706' },
-}
+
 
 export default function AlertesEaux() {
   const [filtre, setFiltre] = useState('ALL')
@@ -35,10 +30,9 @@ export default function AlertesEaux() {
       .then(({ data }) => setDonneesLive(data || []))
   }, [])
 
-  const historique = DEPASSEMENTS_2025.filter(d => {
-    if (filtreType !== 'ALL' && d.type_eau !== filtreType) return false
-    if (filtre === 'oos' && !d.oos) return false
-    if (filtre !== 'ALL' && filtre !== 'oos' && d.statut !== filtre) return false
+  const historique = donneesLive.filter(d => {
+    if (filtreType  !== 'ALL' && d.type_eau !== filtreType) return false
+    if (filtre !== 'ALL' && d.statut !== filtre) return false
     return true
   })
 
@@ -143,7 +137,7 @@ export default function AlertesEaux() {
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-gray-100 dark:border-gray-800">
-                {['Date','Type','Point','Paramètre','Valeur','OOS','Statut','Commentaire'].map(h => (
+                {['Date','Type','Point','Paramètre','Valeur','Statut'].map(h => (
                   <th key={h} className="text-left font-bold text-gray-400 uppercase tracking-wide pb-2 pr-3 whitespace-nowrap">{h}</th>
                 ))}
               </tr>
@@ -151,40 +145,36 @@ export default function AlertesEaux() {
             <tbody>
               {historique.map((d, i) => {
                 const s = STATUT_CFG[d.statut]
-                const oos = d.oos ? OOS_STATUS[d.oos] : null
+                const typeStyle = d.type_eau==='EPU'
+                  ? { bg:'#E8F4FD', txt:'#185FA5' }
+                  : d.type_eau==='EPPI'
+                  ? { bg:'#F3E8FF', txt:'#6B21A8' }
+                  : { bg:'#E1F5EE', txt:'#0F6E56' }
+                const valAff = d.valeur !== null ? `${d.valeur} ${d.unite||''}` : (d.valeur_text || '—')
+                const dateAff = d.date_controle?.split('-').reverse().join('/')
                 return (
-                  <tr key={i} className={`border-b border-gray-50 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/30`}
+                  <tr key={i} className="border-b border-gray-50 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/30"
                     style={{ background: d.statut==='nc' ? '#fef2f210' : d.statut==='action' ? '#fff7ed30' : undefined }}>
-                    <td className="py-2 pr-3 font-mono whitespace-nowrap">{d.date}</td>
+                    <td className="py-2 pr-3 font-mono whitespace-nowrap">{dateAff}</td>
                     <td className="py-2 pr-3">
                       <span className="font-bold text-xs px-1.5 py-0.5 rounded"
-                        style={{ background: d.type_eau==='EPU' ? '#E8F4FD' : '#F3E8FF',
-                                 color: d.type_eau==='EPU' ? '#185FA5' : '#6B21A8' }}>
+                        style={{ background: typeStyle.bg, color: typeStyle.txt }}>
                         {d.type_eau}
                       </span>
                     </td>
-                    <td className="py-2 pr-3 font-mono font-bold text-brand">{d.point}</td>
+                    <td className="py-2 pr-3 font-mono font-bold text-brand">{d.point_code}</td>
                     <td className="py-2 pr-3">{d.parametre}</td>
-                    <td className="py-2 pr-3 font-mono font-bold" style={{ color: s?.txt }}>{d.valeur}</td>
-                    <td className="py-2 pr-3">
-                      {d.oos ? (
-                        <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded"
-                          style={{ color: oos?.color, background: `${oos?.color}15` }}>
-                          {d.oos}
-                          <span className="ml-1 normal-case font-normal">({oos?.statut})</span>
-                        </span>
-                      ) : <span className="text-gray-300">—</span>}
-                    </td>
+                    <td className="py-2 pr-3 font-mono font-bold" style={{ color: s?.txt }}>{valAff}</td>
                     <td className="py-2 pr-3">
                       <span className="font-semibold px-2 py-0.5 rounded-full whitespace-nowrap"
                         style={{ background:s?.bg, border:`1px solid ${s?.border}`, color:s?.txt }}>
                         {s?.label}
                       </span>
                     </td>
-                    <td className="py-2 pr-3 text-gray-400 max-w-xs">{d.commentaire}</td>
                   </tr>
                 )
               })}
+
             </tbody>
           </table>
         </div>
