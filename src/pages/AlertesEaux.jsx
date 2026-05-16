@@ -1,18 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 
-const DEPASSEMENTS_2025 = [
-  { date:'25/11/2025', type_eau:'EPU', point:'S24.41',   parametre:'DGAT', valeur:'59 UFC/mL',    statut:'action', oos:null,        commentaire:'Résultat isolé — max non récurrent' },
-  { date:'03/11/2025', type_eau:'EPU', point:'PeS658',   parametre:'DGAT', valeur:'Indénombrable', statut:'nc',     oos:'OOS-25/14', commentaire:'Contamination probable lors prélèvement. OOS clôturé.' },
-  { date:'14/11/2025', type_eau:'EPU', point:'PeS658',   parametre:'DGAT', valeur:'79 UFC/mL',    statut:'action', oos:'OOS-25/14', commentaire:'Dépassement limite action (50)' },
-  { date:'27/10/2025', type_eau:'EPU', point:'PeS717',   parametre:'DGAT', valeur:'Indénombrable', statut:'nc',     oos:'OOS-25/xxx',commentaire:'Confirmé 03/11 et 10/11. OOS en cours.' },
-  { date:'24/11/2025', type_eau:'EPU', point:'PeS717',   parametre:'DGAT', valeur:'98 UFC/mL',    statut:'action', oos:'OOS-25/xxx',commentaire:'Dépassement limite action (50)' },
-  { date:'03/02/2025', type_eau:'EPU', point:'PeS658',   parametre:'G. pathogènes', valeur:'Présence', statut:'nc', oos:'OOS-25/03', commentaire:'Contamination technicien CQ. OOS clôturé.' },
-  { date:'03/02/2025', type_eau:'EPU', point:'PeS632',   parametre:'G. pathogènes', valeur:'Présence', statut:'nc', oos:'OOS-25/03', commentaire:'Contamination technicien CQ. OOS clôturé.' },
-  { date:'06/01/2025', type_eau:'EPPI',point:'Pes359',   parametre:'DGAT', valeur:'7 UFC/mL',     statut:'action', oos:null,        commentaire:'Dépassement limite action (5). Isolé sans récurrence.' },
-  { date:'03/02/2025', type_eau:'EPPI',point:'V438A.4.4',parametre:'G. pathogènes', valeur:'Présence', statut:'nc', oos:'OOS-25/02', commentaire:'Contamination technicien CQ. OOS clôturé.' },
-  { date:'03/02/2025', type_eau:'EPPI',point:'Pes359',   parametre:'G. pathogènes', valeur:'Présence', statut:'nc', oos:'OOS-25/02', commentaire:'Contamination technicien CQ. OOS clôturé.' },
-]
+// Données chargées depuis Supabase uniquement
 
 const STATUT_CFG = {
   ok:     { label:'Conforme',       bg:'#f0fdf4', border:'#86efac', txt:'#166534' },
@@ -33,12 +22,16 @@ export default function AlertesEaux() {
   const [filtreType, setFiltreType] = useState('ALL')
   const [donneesLive, setDonneesLive] = useState([])
 
+  const annee = new Date().getFullYear()
+
   useEffect(() => {
     supabase.from('controles_eaux')
       .select('*')
       .in('statut', ['alerte','action','nc'])
+      .gte('date_controle', `${annee}-01-01`)
+      .lte('date_controle', `${annee}-12-31`)
       .order('date_controle', { ascending: false })
-      .limit(50)
+      .limit(200)
       .then(({ data }) => setDonneesLive(data || []))
   }, [])
 
@@ -50,18 +43,18 @@ export default function AlertesEaux() {
   })
 
   const stats = {
-    total:  DEPASSEMENTS_2025.length,
-    nc:     DEPASSEMENTS_2025.filter(d => d.statut === 'nc').length,
-    action: DEPASSEMENTS_2025.filter(d => d.statut === 'action').length,
-    oos_ouverts:  DEPASSEMENTS_2025.filter(d => d.oos && OOS_STATUS[d.oos]?.statut === 'En cours').length,
-    oos_clotures: DEPASSEMENTS_2025.filter(d => d.oos && OOS_STATUS[d.oos]?.statut === 'Clôturé').length,
+    total:  donneesLive.length,
+    nc:     donneesLive.filter(d => d.statut === 'nc').length,
+    action: donneesLive.filter(d => d.statut === 'action').length,
+    oos_ouverts:  0,
+    oos_clotures: 0,
   }
 
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-2xl font-extrabold text-gray-900 dark:text-white">Alertes — Eaux 2025</h1>
-        <p className="text-gray-500 text-sm mt-1">Dépassements de limites · Investigations OOS · Suivi actions</p>
+        <h1 className="text-2xl font-extrabold text-gray-900 dark:text-white">Alertes — Eaux {annee}</h1>
+        <p className="text-gray-500 text-sm mt-1">Dépassements de limites {annee} · Investigations OOS · Suivi actions</p>
       </div>
 
       {/* Compteurs */}
@@ -144,7 +137,7 @@ export default function AlertesEaux() {
       {/* Historique 2025 */}
       <div className="card p-4">
         <div className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">
-          Historique 2025 — Revue annuelle
+          Dépassements {annee}
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
