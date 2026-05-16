@@ -1,112 +1,145 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { AlertTriangle, Filter } from 'lucide-react'
 
-function getStatut(germes, n) {
-  if (!n) return 'C'
-  if (germes >= n.action) return 'NC_ACTION'
-  if (germes >= n.alerte) return 'NC_ALERTE'
-  return 'C'
+const ZONES_POCHES = ['PREPARATION','REMPLISSAGE','PREP_REMPL']
+
+const STATUT_CFG = {
+  ok:     { label:'Conforme', bg:'#f0fdf4', border:'#86efac', txt:'#166534' },
+  alerte: { label:'Alerte',   bg:'#fffbeb', border:'#fcd34d', txt:'#92400e' },
+  action: { label:'Action',   bg:'#fff7ed', border:'#fdba74', txt:'#9a3412' },
+  nc:     { label:'NC',       bg:'#fef2f2', border:'#fca5a5', txt:'#991b1b' },
+}
+
+function fmtDate(iso) {
+  if (!iso) return ''
+  const [y,m,d] = iso.split('-')
+  return `${d}/${m}/${y}`
 }
 
 export default function Alertes() {
-  const [controles, setControles] = useState([])
-  const [normes, setNormes] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState('ALL') // ALL | NC_ACTION | NC_ALERTE
+  const [alertes,    setAlertes]    = useState([])
+  const [loading,    setLoading]    = useState(true)
+  const [filtreZone, setFiltreZone] = useState('ALL')
+  const [filtreType, setFiltreType] = useState('ALL')
+  const [filtreStatut,setFiltreStatut] = useState('ALL')
+
+  const annee = new Date().getFullYear()
 
   useEffect(() => {
-    async function load() {
-      const [c, n] = await Promise.all([
-        supabase.from('controles').select('*, zones(code,label,icon), profiles(full_name)').order('date_controle', { ascending: false }),
-        supabase.from('normes').select('*, zones(code)'),
-      ])
-      setControles(c.data || [])
-      setNormes(n.data || [])
-      setLoading(false)
-    }
-    load()
+    supabase.from('controles')
+      .select('*, zones(code, label), salles(label)')
+      .in('statut', ['alerte','action','nc'])
+      .gte('date_controle', `${annee}-01-01`)
+      .lte('date_controle', `${annee}-12-31`)
+      .order('date_controle', { ascending: false })
+      .limit(500)
+      .then(({ data }) => { setAlertes(data || []); setLoading(false) })
   }, [])
 
-  const normesMap = useMemo(() => {
-    const map = {}
-    normes.forEach(n => { map[`${n.zones?.code}_${n.type_controle}`] = n })
-    return map
-  }, [normes])
+  const filtered = alertes.filter(a => {
+    const code = ZONES_POCHES.includes(a.zones?.code) ? 'PREPARATION' : a.zones?.code
+    if (filtreZone !== 'ALL' && code !== filtreZone) return false
+    if (filtreType !== 'ALL' && a.type_controle !== filtreType) return false
+    if (filtreStatut !== 'ALL' && a.statut !== filtreStatut) return false
+    return true
+  })
 
-  const alertes = useMemo(() => {
-    return controles
-      .map(c => ({ ...c, statut: getStatut(c.germes, normesMap[`${c.zones?.code}_${c.type_controle}`]), normes: normesMap[`${c.zones?.code}_${c.type_controle}`] }))
-      .filter(c => c.statut !== 'C')
-      .filter(c => filter === 'ALL' || c.statut === filter)
-      .sort((a, b) => {
-        if (a.statut === 'NC_ACTION' && b.statut !== 'NC_ACTION') return -1
-        if (b.statut === 'NC_ACTION' && a.statut !== 'NC_ACTION') return 1
-        return b.date_controle.localeCompare(a.date_controle)
-      })
-  }, [controles, normesMap, filter])
-
-  if (loading) return <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand"/></div>
+  const stats = {
+    total:  alertes.length,
+    alerte: alertes.filter(a => a.statut === 'alerte').length,
+    action: alertes.filter(a => a.statut === 'action').length,
+    nc:     alertes.filter(a => a.statut === 'nc').length,
+  }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-extrabold text-gray-900 dark:text-white">Alertes & Non-conformités</h1>
-          <p className="text-gray-500 text-sm mt-1">{alertes.length} non-conformité(s) détectée(s)</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Filter size={14} className="text-gray-400" />
-          {['ALL','NC_ACTION','NC_ALERTE'].map(f => (
-            <button key={f} onClick={() => setFilter(f)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors
-                ${filter === f
-                  ? f === 'NC_ACTION' ? 'bg-red-500 text-white' : f === 'NC_ALERTE' ? 'bg-yellow-500 text-white' : 'bg-navy text-white'
-                  : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200'}`}>
-              {f === 'ALL' ? 'Tout' : f === 'NC_ACTION' ? '⛔ Action' : '⚠️ Alerte'}
+    <div className="space-y-5">
+      <div>
+        <h1 className="text-2xl font-extrabold text-gray-900 dark:text-white">Alertes — Environnement {annee}</h1>
+        <p className="text-gray-500 text-sm mt-1">Dépassements de limites · Contrôles ACTIF, PASSIF, SURFACE</p>
+      </div>
+
+      {/* Compteurs */}
+      <div className="grid grid-cols-4 gap-3">
+        {[
+          { label:'Total dépassements', val:stats.total,  color:'#374151' },
+          { label:'Alertes',            val:stats.alerte, color:'#d97706' },
+          { label:'Actions',            val:stats.action, color:'#dc2626' },
+          { label:'Non conformes',      val:stats.nc,     color:'#991b1b' },
+        ].map(({ label, val, color }) => (
+          <div key={label} className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4 text-center">
+            <div className="text-2xl font-extrabold" style={{ color }}>{val}</div>
+            <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mt-1">{label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Filtres */}
+      <div className="card p-3 flex flex-wrap gap-3 items-center">
+        <div className="flex gap-1">
+          {['ALL','alerte','action','nc'].map(s => (
+            <button key={s} onClick={() => setFiltreStatut(s)}
+              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors ${
+                filtreStatut===s ? 'bg-navy text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-500'
+              }`}>
+              {s==='ALL' ? 'Tous' : s==='alerte' ? 'Alertes' : s==='action' ? 'Actions' : 'NC'}
             </button>
           ))}
         </div>
+        <select value={filtreType} onChange={e => setFiltreType(e.target.value)} className="input py-1.5 text-xs w-28">
+          <option value="ALL">Tous types</option>
+          <option value="ACTIF">Actif</option>
+          <option value="PASSIF">Passif</option>
+          <option value="SURFACE">Surface</option>
+        </select>
+        <span className="text-xs text-gray-400 ml-auto">{filtered.length} résultat(s)</span>
       </div>
 
-      {alertes.length === 0 ? (
-        <div className="card p-12 text-center">
-          <div className="text-5xl mb-4">✅</div>
-          <div className="text-green-600 font-bold text-lg">Aucune non-conformité</div>
-          <div className="text-gray-400 text-sm mt-1">Tous les contrôles sont dans les limites acceptables.</div>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {alertes.map(c => (
-            <div key={c.id} className={`card p-4 border-l-4 ${c.statut === 'NC_ACTION' ? 'border-l-red-500' : 'border-l-yellow-500'}`}>
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <span className="text-2xl">{c.zones?.icon}</span>
-                  <div>
-                    <div className="font-bold text-gray-900 dark:text-white text-sm">
-                      {c.zones?.label} — {c.type_controle} — Point {c.point}
-                    </div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 space-x-3">
-                      <span>📅 {c.date_controle}</span>
-                      <span>👤 {c.profiles?.full_name || 'N/A'}</span>
-                      {c.observations && <span>💬 {c.observations}</span>}
-                    </div>
-                  </div>
-                </div>
-                <div className="text-right shrink-0">
-                  <span className={c.statut === 'NC_ACTION' ? 'badge-action' : 'badge-alerte'}>
-                    {c.statut === 'NC_ACTION' ? '⛔ Limite d\'action' : '⚠️ Limite d\'alerte'}
-                  </span>
-                  <div className="mt-1.5 flex items-center gap-2 justify-end text-xs text-gray-400">
-                    <span className="font-mono font-bold text-red-500 text-base">{c.germes} UFC</span>
-                    <span>/ limite : {c.normes?.action}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+      {/* Tableau */}
+      <div className="card p-4">
+        {loading ? (
+          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-brand mx-auto"/>
+        ) : filtered.length === 0 ? (
+          <div className="text-center text-gray-400 py-8 text-sm">
+            {alertes.length === 0 ? `Aucun dépassement enregistré en ${annee}` : 'Aucun résultat pour ce filtre'}
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-gray-100 dark:border-gray-800">
+                  {['Date','Zone','Salle','Point','Type','Cl.','Germes (UFC)','Statut'].map(h => (
+                    <th key={h} className="text-left font-bold text-gray-400 uppercase tracking-wide pb-2 pr-4">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((a, i) => {
+                  const s = STATUT_CFG[a.statut]
+                  const zoneLabel = ZONES_POCHES.includes(a.zones?.code) ? 'Prép. Poches' : a.zones?.label
+                  return (
+                    <tr key={i} className="border-b border-gray-50 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/30"
+                      style={{ background: a.statut==='nc' ? '#fef2f210' : a.statut==='action' ? '#fff7ed30' : undefined }}>
+                      <td className="py-2 pr-4 font-mono whitespace-nowrap">{fmtDate(a.date_controle)}</td>
+                      <td className="py-2 pr-4 text-gray-600 dark:text-gray-300">{zoneLabel}</td>
+                      <td className="py-2 pr-4 text-gray-400">{a.salles?.label || '—'}</td>
+                      <td className="py-2 pr-4 font-mono font-bold text-brand">{a.point}</td>
+                      <td className="py-2 pr-4 text-gray-500">{a.type_controle}</td>
+                      <td className="py-2 pr-4 font-bold">{a.classe}</td>
+                      <td className="py-2 pr-4 font-mono font-bold" style={{ color: s?.txt }}>{a.germes}</td>
+                      <td className="py-2 pr-4">
+                        <span className="font-semibold px-2 py-0.5 rounded-full whitespace-nowrap"
+                          style={{ background:s?.bg, border:`1px solid ${s?.border}`, color:s?.txt }}>
+                          {s?.label}
+                        </span>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
