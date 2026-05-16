@@ -15,11 +15,14 @@ export default function AlertesPersonnel() {
   const [filtrePos, setFiltrePos] = useState('ALL')
 
   useEffect(() => {
+    const annee = new Date().getFullYear()
     supabase.from('controles_personnel')
       .select('*')
       .gte('germes', NORME)
+      .gte('date_controle', `${annee}-01-01`)
+      .lte('date_controle', `${annee}-12-31`)
       .order('date_controle', { ascending: false })
-      .limit(100)
+      .limit(200)
       .then(({ data }) => { setAlertes(data || []); setLoading(false) })
   }, [])
 
@@ -43,7 +46,7 @@ export default function AlertesPersonnel() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-2xl font-extrabold text-gray-900 dark:text-white">Alertes — Personnel</h1>
+        <h1 className="text-2xl font-extrabold text-gray-900 dark:text-white">Alertes — Personnel {new Date().getFullYear()}</h1>
         <p className="text-gray-500 text-sm mt-1">Dépassements empreintes gants · Norme &lt;{NORME} UFC/boîte</p>
       </div>
 
