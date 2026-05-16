@@ -5,7 +5,7 @@ import StatCard from '@/components/StatCard'
 
 const MOIS = ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc']
 const CLASSES = ['A','B','C','D']
-const ANNEES = [2025, 2026, 2027]
+const ANNEES = (() => { const y = new Date().getFullYear(); return [y-1, y, y+1] })()
 
 // ── Icônes personnalisées par zone ──────────────────────────────────────────
 const ZONE_ICONS = {
@@ -58,7 +58,7 @@ export default function Dashboard() {
   const [controles,setControles]= useState([])
   const [loading,  setLoading]  = useState(true)
 
-  const [annee,           setAnnee]           = useState(2025)  // Démarrer sur 2025
+  const [annee,           setAnnee]           = useState(new Date().getFullYear())
   const [filtreZone,      setFiltreZone]      = useState('ALL')
   const [filtreClasse,    setFiltreClasse]    = useState('ALL')
   const [filtreType,      setFiltreType]      = useState('ALL')
@@ -77,11 +77,14 @@ export default function Dashboard() {
       setZones(z.data || [])
       setNormes(n.data || [])
 
+      const currentYear = new Date().getFullYear()
       let all = [], from = 0
       while (true) {
         const { data, error } = await supabase
           .from('controles')
           .select('id, date_controle, zone_id, type_controle, point, germes, classe, zones(code,label,classe,icon,color)')
+          .gte('date_controle', `${currentYear}-01-01`)
+          .lte('date_controle', `${currentYear}-12-31`)
           .order('date_controle', { ascending: false })
           .range(from, from + 999)
         if (error || !data?.length) break
@@ -446,22 +449,7 @@ export default function Dashboard() {
         <h2 className="text-sm font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-3">
           💧 Eaux pharmaceutiques
         </h2>
-        <div className="grid grid-cols-3 gap-4">
-          {['EA','EPU','EPPI'].map(type => (
-            <div key={type} className="card p-5 border-l-4 border-l-blue-400">
-              <div className="flex items-center gap-3 mb-3">
-                <span className="text-2xl">💧</span>
-                <div>
-                  <div className="font-bold text-gray-900 dark:text-white text-sm">
-                    {type === 'EA' ? 'Eau alimentation' : type === 'EPU' ? 'Eau purifiée' : 'Eau injectable'}
-                  </div>
-                  <div className="text-xs text-gray-400">{type}</div>
-                </div>
-              </div>
-              <div className="text-xs text-gray-400 italic">Données disponibles après saisie 2026</div>
-            </div>
-          ))}
-        </div>
+        <EauxStats annee={annee}/>
       </div>
 
       {/* ── Personnel ────────────────────────────────────────────────────── */}
@@ -495,6 +483,87 @@ export default function Dashboard() {
           </ResponsiveContainer>
         )}
       </div>
+    </div>
+  )
+}
+
+
+// ── Composant stats eaux ──────────────────────────────────────────────────
+function EauxStats({ annee }) {
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  const TYPE_LABELS = { EA:'Eau alimentation', EPU:'Eau purifiée', EPPI:'Eau injectable' }
+  const TYPE_COLOR  = { EA:'#0F6E56', EPU:'#185FA5', EPPI:'#6B21A8' }
+  const TYPE_BG     = { EA:'#E1F5EE', EPU:'#E8F4FD', EPPI:'#F3E8FF' }
+
+  useEffect(() => {
+    supabase.from('controles_eaux')
+      .select('type_eau, statut')
+      .gte('date_controle', `${annee}-01-01`)
+      .lte('date_controle', `${annee}-12-31`)
+      .then(({ data: d }) => {
+        setData(d || [])
+        setLoading(false)
+      })
+  }, [annee])
+
+  if (loading) return <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-brand"/>
+
+  if (!data?.length) return (
+    <div className="card p-5 col-span-3 text-center text-gray-400 text-sm italic">
+      Aucune donnée eaux pour {annee}
+    </div>
+  )
+
+  return (
+    <div className="grid grid-cols-3 gap-4">
+      {['EA','EPU','EPPI'].map(type => {
+        const rows   = data.filter(r => r.type_eau === type)
+        const total  = rows.length
+        const conf   = rows.filter(r => r.statut === 'ok').length
+        const alerte = rows.filter(r => r.statut === 'alerte').length
+        const action = rows.filter(r => r.statut === 'action').length
+        const nc     = rows.filter(r => r.statut === 'nc').length
+        const tx     = total ? Math.round(conf / total * 100) : null
+        const color  = (action+nc) > 0 ? '#dc2626' : alerte > 0 ? '#d97706' : '#16a34a'
+
+        return (
+          <div key={type} className="card p-5 border-l-4"
+            style={{ borderLeftColor: total ? color : '#e2e8f0' }}>
+            <div className="flex items-center gap-3 mb-3">
+              <span className="text-2xl">💧</span>
+              <div>
+                <div className="font-bold text-gray-900 dark:text-white text-sm">{TYPE_LABELS[type]}</div>
+                <div className="text-xs font-bold px-1.5 py-0.5 rounded inline-block mt-0.5"
+                  style={{ background: TYPE_BG[type], color: TYPE_COLOR[type] }}>{type}</div>
+              </div>
+              {tx !== null && (
+                <div className="ml-auto text-xl font-extrabold"
+                  style={{ color: tx >= 95 ? '#16a34a' : tx >= 80 ? '#d97706' : '#dc2626' }}>
+                  {tx}%
+                </div>
+              )}
+            </div>
+            {total === 0 ? (
+              <div className="text-xs text-gray-400 italic">Aucune saisie pour {annee}</div>
+            ) : (
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { v:conf,        l:'Conformes', c:'text-green-600' },
+                  { v:alerte,      l:'Alertes',   c:'text-amber-500' },
+                  { v:action + nc, l:'NC/Action', c:'text-red-600'   },
+                ].map((s,i) => (
+                  <div key={i} className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-2 text-center">
+                    <div className={`font-extrabold font-mono text-lg ${s.c}`}>{s.v}</div>
+                    <div className="text-[10px] text-gray-400 font-semibold">{s.l}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }
