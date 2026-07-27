@@ -3,8 +3,8 @@ import { supabase } from '@/lib/supabaseClient'
 import { useAuth } from '@/contexts/AuthContext'
 
 const ZONE_ECRANS = {
-  LABO_MICRO:  { label:'Laboratoire Microbiologie', icon:'🧫' , color:'#7c3aed', ecrans:['Ecran1','Ecran2','Ecran3'] },
-  PREPARATION: { label:'Préparation Poches Stériles',    icon:'🔬',   val:'/icon_poches.webp', color:'#1d6fa4', ecrans:['Ecran4','Ecran5','Ecran6'] },
+  LABO_MICRO:  { label:'Laboratoire Microbiologie',      icon:'🔬', color:'#7c3aed', ecrans:['Ecran1','Ecran2','Ecran3'] },
+  PREPARATION: { label:'Préparation Poches Stériles',    icon:'💊', color:'#1d6fa4', ecrans:['Ecran4','Ecran5','Ecran6'] },
   PRELEVEMENT: { label:'Zone Prélèvement',               icon:'🔬', color:'#0d9488', ecrans:['Ecran7'] },
   CARTOUCHE:   { label:'Zone Cartouche',                 icon:'⚗️', color:'#dc2626', ecrans:['Ecran8'] },
   DIALYSE:     { label:'Zone Dialyse',                   icon:'💧', color:'#0284c7', ecrans:['Ecran9'] },
@@ -205,6 +205,17 @@ export default function Saisie2026() {
     return map
   }, [pointsFiltres])
 
+  // Regroupement par type quand "Tous" est sélectionné
+  const pointsByType = useMemo(() => {
+    const TYPES = ['ACTIF','PASSIF','SURFACE']
+    const map = {}
+    TYPES.forEach(t => {
+      const pts = pointsEcran.filter(p => p.type_controle === t)
+      if (pts.length) map[t] = pts
+    })
+    return map
+  }, [pointsEcran])
+
   // Stats conformité
   const stats = useMemo(() => {
     let ok=0, alerte=0, action=0, nc=0, rens=0
@@ -389,31 +400,70 @@ export default function Saisie2026() {
           </div>
 
           <div className="space-y-0">
-            {Object.entries(pointsBySalle).map(([salle, pts]) => (
-              <div key={salle}>
-                <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest px-3 mt-3 mb-1 flex items-center gap-2">
-                  <span>▸ {salle}</span>
-                  <span className="text-gray-300">({pts.length})</span>
+            {selType === 'ALL' ? (
+              // Mode TOUS : regroupé par type (Actif → Passif → Surface)
+              Object.entries(pointsByType).map(([type, pts]) => {
+                const TYPE_LABELS = { ACTIF:'🌬️ Actif (air)', PASSIF:'📦 Passif (boîtes)', SURFACE:'🧴 Surfaces' }
+                const TYPE_COLORS = { ACTIF:'#7c3aed', PASSIF:'#0284c7', SURFACE:'#0d9488' }
+                return (
+                  <div key={type}>
+                    <div className="flex items-center gap-2 px-3 mt-4 mb-1.5">
+                      <div className="h-px flex-1" style={{ background: TYPE_COLORS[type] + '40' }}/>
+                      <span className="text-[11px] font-bold uppercase tracking-widest"
+                        style={{ color: TYPE_COLORS[type] }}>
+                        {TYPE_LABELS[type]}
+                      </span>
+                      <span className="text-[10px] text-gray-400">({pts.length} points)</span>
+                      <div className="h-px flex-1" style={{ background: TYPE_COLORS[type] + '40' }}/>
+                    </div>
+                    {pts.map(pt => (
+                      <LigneSaisie
+                        key={`${pt.point}_${pt.type_controle}`}
+                        pt={{
+                          point:        pt.point,
+                          salle:        pt.salle || '',
+                          localisation: pt.localisation || '',
+                          classe:       pt.classe,
+                          norme:        pt.norme,
+                          alerte:       pt.alerte,
+                          action:       pt.action,
+                          unite:        pt.unite,
+                        }}
+                        value={values[`${pt.point}_${pt.type_controle}`] ?? ''}
+                        onChange={val => setValue(pt.point, pt.type_controle, val)}
+                      />
+                    ))}
+                  </div>
+                )
+              })
+            ) : (
+              // Mode type unique : regroupé par salle
+              Object.entries(pointsBySalle).map(([salle, pts]) => (
+                <div key={salle}>
+                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-widest px-3 mt-3 mb-1 flex items-center gap-2">
+                    <span>▸ {salle}</span>
+                    <span className="text-gray-300">({pts.length})</span>
+                  </div>
+                  {pts.map(pt => (
+                    <LigneSaisie
+                      key={`${pt.point}_${pt.type_controle}`}
+                      pt={{
+                        point:        pt.point,
+                        salle:        salle,
+                        localisation: pt.localisation || '',
+                        classe:       pt.classe,
+                        norme:        pt.norme,
+                        alerte:       pt.alerte,
+                        action:       pt.action,
+                        unite:        pt.unite,
+                      }}
+                      value={values[`${pt.point}_${pt.type_controle}`] ?? ''}
+                      onChange={val => setValue(pt.point, pt.type_controle, val)}
+                    />
+                  ))}
                 </div>
-                {pts.map(pt => (
-                  <LigneSaisie
-                    key={`${pt.point}_${pt.type_controle}`}
-                    pt={{
-                      point:       pt.point,
-                      salle:       salle,
-                      localisation:pt.localisation || '',
-                      classe:      pt.classe,
-                      norme:       pt.norme,
-                      alerte:      pt.alerte,
-                      action:      pt.action,
-                      unite:       pt.unite,
-                    }}
-                    value={values[`${pt.point}_${pt.type_controle}`] ?? ''}
-                    onChange={val => setValue(pt.point, pt.type_controle, val)}
-                  />
-                ))}
-              </div>
-            ))}
+              ))
+            )}
           </div>
 
           {/* Résumé conformité */}
