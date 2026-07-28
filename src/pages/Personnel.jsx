@@ -7,9 +7,11 @@ const POS_LABELS = {
   MD:'Main droite', MG:'Main gauche', BD:'Bras droit',
   BG:'Bras gauche', AVD:'Avant-bras droit', AVG:'Avant-bras gauche'
 }
-const TRIMESTRES = {
-  T1:['2025-01-01','2025-03-31'], T2:['2025-04-01','2025-06-30'],
-  T3:['2025-07-01','2025-09-30'], T4:['2025-10-01','2025-12-31'],
+function getTrimestres(a) {
+  return {
+    T1:[`${a}-01-01`,`${a}-03-31`], T2:[`${a}-04-01`,`${a}-06-30`],
+    T3:[`${a}-07-01`,`${a}-09-30`], T4:[`${a}-10-01`,`${a}-12-31`],
+  }
 }
 const MOIS_SHORT = ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc']
 const OP_COLORS = ['#378ADD','#1D9E75','#D4537E','#BA7517','#7F77DD','#D85A30','#639922']
@@ -54,7 +56,7 @@ function ChartBox({ id, config, height = 220 }) {
 }
 
 // ── Conclusion générale par opérateur ─────────────────────────────────────
-function ConclusionPersonnel({ data, operateurs, periode }) {
+function ConclusionPersonnel({ data, operateurs, periode, annee = new Date().getFullYear() }) {
   const stats = useMemo(() => {
     return operateurs.map(op => {
       const od = data.filter(r => r.operateur_nom === op)
@@ -79,13 +81,13 @@ function ConclusionPersonnel({ data, operateurs, periode }) {
   return (
     <div className="card p-5 mt-4 border-l-4 border-l-blue-500">
       <div className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-3">
-        📋 Conclusion générale — Contrôle du personnel{periode !== 'ALL' ? ` · ${periode}` : ' · 2025'}
+        📋 Conclusion générale — Contrôle du personnel {periode !== 'ALL' ? `· ${periode} ${annee}` : `· ${annee}`}
       </div>
 
       <div className="text-sm text-gray-700 dark:text-gray-300 space-y-3 leading-relaxed">
         <p>
           L'analyse des {data.length} contrôles microbiologiques du personnel réalisés
-          {periode === 'ALL' ? ' sur l\'ensemble de l\'année 2025' : ` au cours du ${periode}`} montre
+          {periode === 'ALL' ? ` sur l'ensemble de l'année ${annee}` : ` au cours du ${periode} ${annee}`} montre
           un <span className={`font-semibold ${globalTx >= 95 ? 'text-green-600' : globalTx >= 80 ? 'text-amber-600' : 'text-red-600'}`}>
             taux de conformité global de {globalTx}%
           </span> ({data.length - globalNC} contrôles conformes sur {data.length}).
@@ -131,6 +133,8 @@ export default function Personnel() {
   const [selPeriode,setSelPeriode]= useState('ALL')
   const [selOp,     setSelOp]     = useState('ALL')
   const [chartReady,setChartReady]= useState(false)
+  const [annee,     setAnnee]     = useState(new Date().getFullYear())
+  const ANNEES = (() => { const y = new Date().getFullYear(); return [y-1, y, y+1] })()
 
   useEffect(() => {
     if (window.Chart) { setChartReady(true); return }
@@ -141,12 +145,16 @@ export default function Personnel() {
   }, [])
 
   useEffect(() => {
+    setLoading(true)
+    setSelPeriode('ALL')
     async function load() {
       let all = [], from = 0
       while (true) {
         const { data, error } = await supabase
           .from('controles_personnel')
           .select('*')
+          .gte('date_controle', `${annee}-01-01`)
+          .lte('date_controle', `${annee}-12-31`)
           .order('date_controle')
           .range(from, from + 999)
         if (error || !data?.length) break
@@ -165,12 +173,12 @@ export default function Personnel() {
       setLoading(false)
     }
     load()
-  }, [])
+  }, [annee])
 
   const dataFiltered = useMemo(() => {
     let d = controles
     if (selPeriode !== 'ALL') {
-      const [debut, fin] = TRIMESTRES[selPeriode]
+      const [debut, fin] = getTrimestres(annee)[selPeriode]
       d = d.filter(r => r.date_controle >= debut && r.date_controle <= fin)
     }
     if (selOp !== 'ALL') d = d.filter(r => r.operateur_nom === selOp)
@@ -334,6 +342,19 @@ export default function Personnel() {
             </select>
           </div>
 
+          {/* Année */}
+          <div>
+            <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1.5">Année</label>
+            <div className="flex gap-1">
+              {ANNEES.map(a => (
+                <button key={a} onClick={() => setAnnee(a)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${annee===a?'bg-brand text-white':'bg-gray-100 dark:bg-gray-800 text-gray-600 hover:bg-gray-200'}`}>
+                  {a}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Période */}
           <div>
             <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1.5">Période</label>
@@ -341,7 +362,7 @@ export default function Personnel() {
               {['ALL','T1','T2','T3','T4'].map(t => (
                 <button key={t} onClick={() => setSelPeriode(t)}
                   className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-colors ${selPeriode===t?'bg-navy text-white':'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200'}`}>
-                  {t==='ALL'?"Année":t}
+                  {t==='ALL' ? `${annee}` : t}
                 </button>
               ))}
             </div>
@@ -476,7 +497,7 @@ export default function Personnel() {
             </div>
           )}
 
-          <ConclusionPersonnel data={dataFiltered} operateurs={selOp==='ALL'?operateurs:[selOp]} periode={selPeriode}/>
+          <ConclusionPersonnel data={dataFiltered} operateurs={selOp==='ALL'?operateurs:[selOp]} periode={selPeriode} annee={annee}/>
         </div>
       )}
 
@@ -496,7 +517,7 @@ export default function Personnel() {
               </div>
             ))}
           </div>
-          <ConclusionPersonnel data={dataFiltered} operateurs={selOp==='ALL'?operateurs:[selOp]} periode={selPeriode}/>
+          <ConclusionPersonnel data={dataFiltered} operateurs={selOp==='ALL'?operateurs:[selOp]} periode={selPeriode} annee={annee}/>
         </div>
       )}
 
@@ -549,7 +570,7 @@ export default function Personnel() {
             </div>
           </div>
 
-          <ConclusionPersonnel data={dataFiltered} operateurs={selOp==='ALL'?operateurs:[selOp]} periode={selPeriode}/>
+          <ConclusionPersonnel data={dataFiltered} operateurs={selOp==='ALL'?operateurs:[selOp]} periode={selPeriode} annee={annee}/>
         </div>
       )}
     </div>
