@@ -52,16 +52,22 @@ function BadgeStatut({ statut }) {
 }
 
 function LigneSaisie({ pt, value, onChange }) {
-  const statut = getStatut(value, pt.norme, pt.alerte, pt.action)
-  const cfg = statut ? STATUT_CFG[statut] : null
-  const hasVal = value !== '' && value !== undefined
+  // Détecter les points de 2ème shift (code se terminant par ')
+  const isShift2 = pt.point?.endsWith("'") || pt.point?.endsWith('\'')
+  const isNA     = value === 'NA'
+
+  const statut = (!isNA && value !== '' && value !== undefined)
+    ? getStatut(value, pt.norme, pt.alerte, pt.action)
+    : null
+  const cfg    = statut ? STATUT_CFG[statut] : null
 
   return (
     <div className="grid gap-2 px-3 py-2 rounded-lg transition-colors"
       style={{
         gridTemplateColumns: '52px 34px 1fr 110px 68px 150px',
         alignItems: 'center',
-        background: cfg?.rowBg || 'transparent',
+        background: isNA ? '#f8fafc' : (cfg?.rowBg || 'transparent'),
+        opacity: isNA ? 0.65 : 1,
       }}>
 
       {/* Code point */}
@@ -89,24 +95,42 @@ function LigneSaisie({ pt, value, onChange }) {
         <div className="text-gray-300 text-[9px]">{pt.unite}</div>
       </div>
 
-      {/* Input UFC */}
-      <div>
+      {/* Input UFC + case NA pour shift 2 */}
+      <div className="flex items-center gap-1.5">
         <input
           type="number" min="0" step="1"
-          value={value}
+          value={isNA ? '' : value}
           onChange={e => onChange(e.target.value)}
-          placeholder="0"
+          disabled={isNA}
+          placeholder={isNA ? '—' : '0'}
           className="w-16 text-center font-mono font-bold text-sm px-2 py-1.5 rounded-lg outline-none transition-all"
           style={{
-            border: cfg ? `1.5px solid ${cfg.border}` : '1.5px solid #e2e8f0',
-            background: cfg?.bg || 'white',
-            color: cfg?.txt || '#111',
+            border: isNA ? '1.5px dashed #e2e8f0' : cfg ? `1.5px solid ${cfg.border}` : '1.5px solid #e2e8f0',
+            background: isNA ? '#f8fafc' : (cfg?.bg || 'white'),
+            color: isNA ? '#cbd5e1' : (cfg?.txt || '#111'),
+            cursor: isNA ? 'not-allowed' : undefined,
           }}
         />
+        {isShift2 && (
+          <label className="flex items-center gap-1 cursor-pointer" title="Non réalisé — shift unique">
+            <input
+              type="checkbox"
+              checked={isNA}
+              onChange={e => onChange(e.target.checked ? 'NA' : '')}
+              style={{ width: 13, height: 13, cursor: 'pointer', accentColor: '#64748b' }}
+            />
+            <span className="text-[10px] font-semibold text-gray-400 select-none">N/A</span>
+          </label>
+        )}
       </div>
 
       {/* Conformité */}
-      <div><BadgeStatut statut={statut} /></div>
+      <div>
+        {isNA
+          ? <span className="text-xs text-gray-300 italic">Non réalisé</span>
+          : <BadgeStatut statut={statut} />
+        }
+      </div>
     </div>
   )
 }
@@ -222,7 +246,7 @@ export default function Saisie2026() {
     pointsEcran.forEach(p => {
       const key = `${p.point}_${p.type_controle}`
       const val = values[key]
-      if (val === undefined || val === '') return
+      if (val === undefined || val === '' || val === 'NA') return
       rens++
       const statut = getStatut(val, p.norme, p.alerte, p.action)
       if (statut === 'ok')     ok++
@@ -245,7 +269,7 @@ export default function Saisie2026() {
   async function handleSave() {
     if (!date)    return showMsg('Date obligatoire', 'error')
     if (!zoneObj) return showMsg('Zone introuvable', 'error')
-    const renseignes = Object.entries(values).filter(([,v]) => v !== '' && v !== undefined)
+    const renseignes = Object.entries(values).filter(([,v]) => v !== '' && v !== undefined && v !== 'NA')
     if (renseignes.length === 0) return showMsg('Aucune valeur saisie', 'warn')
 
     setSaving(true)
