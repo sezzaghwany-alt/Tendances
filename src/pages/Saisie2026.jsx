@@ -52,8 +52,12 @@ function BadgeStatut({ statut }) {
 }
 
 function LigneSaisie({ pt, value, onChange }) {
-  // Détecter les points de 2ème shift (code se terminant par ')
-  const isShift2 = pt.point?.endsWith("'") || pt.point?.endsWith('\'')
+  // Détecter les points de 2ème shift (code avec apostrophe ou localisation Shift 2)
+  const isShift2 = !!(pt.point?.match(/[''`']/) || 
+    pt.localisation?.toLowerCase().includes('shift 2') ||
+    pt.salle?.toLowerCase().includes('shift 2'))
+    pt.localisation?.toLowerCase().includes('shift 2') ||
+    pt.salle?.toLowerCase().includes('shift 2')
   const isNA     = value === 'NA'
 
   const statut = (!isNA && value !== '' && value !== undefined)
