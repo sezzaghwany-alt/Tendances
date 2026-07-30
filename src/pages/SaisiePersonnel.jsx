@@ -1,390 +1,420 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 
-const NORME_PERSONNEL = 5
-const POSITIONS = ['MD','MG','BD','BG','AVD','AVG']
+const NORME = 5
 
-const STATUT_CFG = {
-  ok: { label:'Conforme', bg:'#f0fdf4', border:'#86efac', txt:'#166534' },
-  nc: { label:'NC',       bg:'#fef2f2', border:'#fca5a5', txt:'#991b1b' },
+const ZONES_CONFIG = {
+  LABO_MICRO: {
+    label: 'Laboratoire Microbiologie',
+    icon:  '🧫',
+    color: '#7c3aed',
+    positions: ['MD','MG','BD','BG','AVD','AVG'],
+  },
+  REMPLISSAGE: {
+    label: 'Remplissage Poches Stériles',
+    icon:  '💊',
+    color: '#1d6fa4',
+    positions: ['MD','MG','AVD','AVG'],
+  },
 }
 
-const PAGE_SIZE = 25
-
-function fmtDate(iso) {
-  if (!iso) return ''
-  const [y,m,d] = iso.split('-')
-  return `${d}/${m}/${y}`
+const POS_LABELS = {
+  MD:  'Main droite',
+  MG:  'Main gauche',
+  BD:  'Buste droit',
+  BG:  'Buste gauche',
+  AVD: 'Avant-bras droit',
+  AVG: 'Avant-bras gauche',
 }
 
-export default function ListePersonnel() {
-  const [rows,        setRows]        = useState([])
-  const [total,       setTotal]       = useState(0)
-  const [loading,     setLoading]     = useState(true)
-  const [page,        setPage]        = useState(0)
-  const [editId,      setEditId]      = useState(null)
-  const [editForm,    setEditForm]    = useState({})
-  const [saving,      setSaving]      = useState(false)
-  const [deleting,    setDeleting]    = useState(null)
-  const [msg,         setMsg]         = useState({ text:'', type:'' })
+const POS_COLOR = {
+  MD: '#185FA5', MG: '#185FA5',
+  BD: '#854F0B', BG: '#854F0B',
+  AVD: '#185FA5', AVG: '#185FA5',
+}
 
-  // Filtres
-  const [filtrePosition, setFiltrePosition] = useState('ALL')
-  const [filtreStatut,   setFiltreStatut]   = useState('ALL')
-  const [filtreOperateur,setFiltreOperateur]= useState('')
-  const [filtreZone,     setFiltreZone]     = useState('ALL')
-  const [filtreLot,      setFiltreLot]      = useState('')
-  const [filtreProduit,  setFiltreProduit]  = useState('')
-  const [dateDebut,      setDateDebut]      = useState('')
-  const [dateFin,        setDateFin]        = useState('')
-  const [annee,          setAnnee]          = useState(new Date().getFullYear())
+function getStatut(val) {
+  if (val === '' || val === undefined || val === null) return null
+  const v = parseInt(val)
+  if (isNaN(v)) return null
+  if (v >= NORME) return 'nc'
+  return 'ok'
+}
 
-  const ANNEES = (() => { const y = new Date().getFullYear(); return [y-1, y, y+1] })()
+const STATUT_STYLE = {
+  nc: { border:'#fca5a5', bg:'#fef2f2', txt:'#dc2626' },
+  ok: { border:'#86efac', bg:'#f0fdf4', txt:'#166534' },
+}
 
-  async function load() {
-    setLoading(true)
-    const dDebut = dateDebut || `${annee}-01-01`
-    const dFin   = dateFin   || `${annee}-12-31`
+function InputGermes({ value, onChange }) {
+  const s = getStatut(value)
+  const style = s ? STATUT_STYLE[s] : {}
+  return (
+    <input
+      type="number" min="0" step="1"
+      value={value ?? ''}
+      onChange={e => onChange(e.target.value)}
+      placeholder="0"
+      style={{
+        width: '58px', fontSize: 13, fontFamily: 'monospace', fontWeight: s === 'nc' ? 700 : 400,
+        textAlign: 'center', padding: '5px 4px', borderRadius: 8,
+        border: `1.5px solid ${s ? style.border : '#e2e8f0'}`,
+        background: s ? style.bg : 'white',
+        color: s ? style.txt : '#111',
+        outline: 'none',
+      }}
+    />
+  )
+}
 
-    let q = supabase.from('controles_personnel')
-      .select('*', { count:'exact' })
-      .gte('date_controle', dDebut)
-      .lte('date_controle', dFin)
-      .order('date_controle', { ascending: false })
-      .order('created_at',    { ascending: false })
-      .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
+function LigneOperateur({ ligne, operateurs, positions, onChange, onRemove }) {
+  return (
+    <div style={{
+      display: 'grid',
+      gridTemplateColumns: `220px repeat(${positions.length}, 66px) 34px`,
+      gap: 8, alignItems: 'center',
+      padding: '8px 12px',
+      borderTop: '0.5px solid var(--color-border-tertiary)',
+      background: positions.some(p => getStatut(ligne[p]) === 'nc') ? '#fef2f210' : undefined,
+    }}>
+      {/* Opérateur — liste déroulante + saisie libre */}
+      <div style={{ display:'flex', flexDirection:'column', gap:3 }}>
+        {ligne.showCustom ? (
+          <div style={{ display:'flex', gap:4 }}>
+            <input
+              type="text"
+              placeholder="Nom prénom..."
+              value={ligne.operateur_nom || ''}
+              onChange={e => onChange({ ...ligne, operateur_nom: e.target.value, operateur_id: '' })}
+              autoFocus
+              style={{ fontSize:12, flex:1, padding:'5px 6px', borderRadius:8,
+                border:'1.5px solid #1d6fa4', outline:'none' }}
+            />
+            <button
+              onClick={() => onChange({ ...ligne, showCustom: false, operateur_nom:'', operateur_id:'' })}
+              title="Revenir à la liste"
+              style={{ padding:'4px 8px', borderRadius:6, border:'1px solid #e2e8f0',
+                background:'#f8fafc', color:'#64748b', cursor:'pointer', fontSize:11 }}>
+              ✕
+            </button>
+          </div>
+        ) : (
+          <div style={{ display:'flex', gap:4 }}>
+            <select
+              value={ligne.operateur_nom || ''}
+              onChange={e => onChange({ ...ligne, operateur_nom: e.target.value, operateur_id: '' })}
+              style={{ fontSize:12, flex:1, padding:'5px 6px', borderRadius:8,
+                border:'1.5px solid #e2e8f0', outline:'none' }}>
+              <option value="">— Sélectionner —</option>
+              {operateurs.map(nom => (
+                <option key={nom} value={nom}>{nom}</option>
+              ))}
+            </select>
+            <button
+              onClick={() => onChange({ ...ligne, showCustom: true, operateur_nom:'', operateur_id:'' })}
+              title="Ajouter un nouvel opérateur"
+              style={{ padding:'4px 8px', borderRadius:6, border:'1px solid #1d6fa4',
+                background:'#E8F4FD', color:'#185FA5', cursor:'pointer', fontSize:13,
+                fontWeight:700, lineHeight:1 }}>
+              +
+            </button>
+          </div>
+        )}
+      </div>
 
-    if (filtrePosition !== 'ALL') q = q.eq('position', filtrePosition)
-    if (filtreZone     !== 'ALL') q = q.eq('zone', filtreZone)
-    if (filtreStatut   !== 'ALL') {
-      if (filtreStatut === 'ok') q = q.lt('germes', NORME_PERSONNEL)
-      else                       q = q.gte('germes', NORME_PERSONNEL)
-    }
-    if (filtreOperateur.trim()) q = q.ilike('operateur_nom', `%${filtreOperateur.trim()}%`)
-    if (filtreLot.trim())       q = q.ilike('lot',           `%${filtreLot.trim()}%`)
-    if (filtreProduit.trim())   q = q.ilike('produit',       `%${filtreProduit.trim()}%`)
+      {/* Valeurs par position */}
+      {positions.map(pos => (
+        <InputGermes
+          key={pos}
+          value={ligne[pos] ?? ''}
+          onChange={val => onChange({ ...ligne, [pos]: val })}
+        />
+      ))}
 
-    const { data, count, error } = await q
-    if (!error) { setRows(data || []); setTotal(count || 0) }
-    setLoading(false)
+      {/* Supprimer */}
+      <button onClick={onRemove}
+        style={{ width: 28, height: 28, borderRadius: 6, border: '0.5px solid #fca5a5',
+          background: '#fef2f2', color: '#dc2626', cursor: 'pointer', fontSize: 14,
+          display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        ✕
+      </button>
+    </div>
+  )
+}
+
+function newLigne() {
+  return { id: Math.random().toString(36).slice(2), operateur_id: '', operateur_nom: '', MD:'', MG:'', BD:'', BG:'', AVD:'', AVG:'' }
+}
+
+export default function SaisiePersonnel() {
+  const [selZone,    setSelZone]    = useState('LABO_MICRO')
+  const [date,       setDate]       = useState(new Date().toISOString().split('T')[0])
+  const [lot,        setLot]        = useState('')
+  const [produit,    setProduit]    = useState('')
+  const [lignes,     setLignes]     = useState([newLigne()])
+  const [operateurs, setOperateurs] = useState([])
+  const [saving,     setSaving]     = useState(false)
+  const [msg,        setMsg]        = useState({ text:'', type:'' })
+
+  const zoneCfg    = ZONES_CONFIG[selZone]
+  const positions  = zoneCfg.positions
+
+  // Charger opérateurs depuis les noms déjà saisis dans controles_personnel
+  useEffect(() => {
+    supabase.from('controles_personnel')
+      .select('operateur_nom')
+      .not('operateur_nom', 'is', null)
+      .order('operateur_nom')
+      .then(({ data }) => {
+        const noms = [...new Set((data || []).map(r => r.operateur_nom).filter(Boolean))].sort()
+        setOperateurs(noms)
+      })
+  }, [])
+
+  // Reset lignes au changement de zone
+  useEffect(() => {
+    setLignes([newLigne()])
+  }, [selZone])
+
+  function updateLigne(idx, newLigne) {
+    setLignes(prev => prev.map((l, i) => i === idx ? newLigne : l))
   }
 
-  useEffect(() => { setPage(0) }, [filtrePosition, filtreZone, filtreStatut, filtreOperateur, filtreLot, filtreProduit, dateDebut, dateFin, annee])
-  useEffect(() => { load() }, [page, filtrePosition, filtreZone, filtreStatut, filtreOperateur, filtreLot, filtreProduit, dateDebut, dateFin, annee])
+  function removeLigne(idx) {
+    setLignes(prev => prev.length === 1 ? [newLigne()] : prev.filter((_, i) => i !== idx))
+  }
 
-  function showMsg(text, type='ok') {
+  function addLigne() {
+    setLignes(prev => [...prev, newLigne()])
+  }
+
+  // Stats conformité temps réel
+  const stats = useMemo(() => {
+    let total = 0, nc = 0, rens = 0
+    lignes.forEach(l => {
+      positions.forEach(p => {
+        if (l[p] !== '' && l[p] !== undefined && l[p] !== null) {
+          rens++
+          total++
+          if (getStatut(l[p]) === 'nc') nc++
+        }
+      })
+    })
+    return { total, nc, conforme: total - nc, rens }
+  }, [lignes, positions])
+
+  function showMsg(text, type = 'ok') {
     setMsg({ text, type })
     setTimeout(() => setMsg({ text:'', type:'' }), 5000)
   }
 
-  function startEdit(row) {
-    setEditId(row.id)
-    setEditForm({
-      date_controle:  row.date_controle  || '',
-      operateur_nom:  row.operateur_nom  || '',
-      position:       row.position       || '',
-      germes:         row.germes !== null ? String(row.germes) : '',
-      lot:            row.lot            || '',
-      produit:        row.produit        || '',
-    })
-  }
+  async function handleSave() {
+    if (!date) return showMsg('Date obligatoire', 'error')
+    const lignesRenseignees = lignes.filter(l =>
+      l.operateur_nom?.trim() && positions.some(p => l[p] !== '' && l[p] !== undefined)
+    )
+    if (!lignesRenseignees.length) return showMsg('Aucune ligne renseignée', 'warn')
 
-  async function handleSaveEdit(row) {
     setSaving(true)
-    const g = parseFloat(editForm.germes) ?? 0
-    const newStatut = g >= NORME_PERSONNEL ? 'nc' : 'ok'
 
-    const updates = {
-      date_controle: editForm.date_controle,
-      operateur_nom: editForm.operateur_nom,
-      position:      editForm.position,
-      germes:        g,
-      lot:           editForm.lot     || null,
-      produit:       editForm.produit || null,
-      statut:        newStatut,
-    }
+    // Créer une ligne par position par opérateur
+    const rows = []
+    lignesRenseignees.forEach(l => {
+      positions.forEach(p => {
+        const val = l[p]
+        if (val === '' || val === undefined || val === null) return
+        const germes = parseInt(val) || 0
+        rows.push({
+          date_controle: date,
+          operateur_id:  null,
+          operateur_nom: l.operateur_nom?.trim() || 'Inconnu',
+          zone:          selZone,
+          position:      p,
+          germes,
+          lot:           lot || null,
+          produit:       produit || null,
+          statut:        germes >= NORME ? 'nc' : 'ok',
+        })
+      })
+    })
 
-    const { error } = await supabase.from('controles_personnel').update(updates).eq('id', row.id)
+    const { error } = await supabase.from('controles_personnel').insert(rows)
     setSaving(false)
+
     if (error) return showMsg('Erreur : ' + error.message, 'error')
-    setEditId(null); setEditForm({})
-    showMsg('Mesure mise à jour ✅')
-    load()
-  }
 
-  async function handleDelete(id) {
-    if (!window.confirm('Supprimer cette mesure ? Cette action est irréversible.')) return
-    setDeleting(id)
-    const { error } = await supabase.from('controles_personnel').delete().eq('id', id)
-    setDeleting(null)
-    if (error) return showMsg('Erreur : ' + error.message, 'error')
-    showMsg('Mesure supprimée')
-    load()
-  }
-
-  const totalPages = Math.ceil(total / PAGE_SIZE)
-  const activeFilters = [filtrePosition!=='ALL',filtreZone!=='ALL',filtreStatut!=='ALL',filtreOperateur.trim(),filtreLot.trim(),filtreProduit.trim(),dateDebut,dateFin].filter(Boolean).length
-
-  function resetFiltres() {
-    setFiltrePosition('ALL'); setFiltreStatut('ALL'); setFiltreZone('ALL')
-    setFiltreOperateur(''); setFiltreLot(''); setFiltreProduit('')
-    setDateDebut(''); setDateFin('')
+    showMsg(`✅ ${rows.length} mesure(s) enregistrées pour ${lignesRenseignees.length} opérateur(s)`)
+    setLignes([newLigne()])
+    setLot(''); setProduit('')
+    // Recharger la liste des opérateurs pour inclure les nouveaux
+    supabase.from('controles_personnel').select('operateur_nom')
+      .not('operateur_nom', 'is', null).order('operateur_nom')
+      .then(({ data }) => {
+        const noms = [...new Set((data || []).map(r => r.operateur_nom).filter(Boolean))].sort()
+        setOperateurs(noms)
+      })
   }
 
   return (
     <div className="space-y-5">
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl font-extrabold text-gray-900 dark:text-white">Liste des données — Personnel</h1>
-          <p className="text-gray-500 text-sm mt-1">{total} mesure{total>1?'s':''} · Norme &lt;{NORME_PERSONNEL} UFC/boîte</p>
-        </div>
-        {activeFilters > 0 && (
-          <button onClick={resetFiltres} className="text-xs text-brand hover:underline mt-1">
-            ✕ Réinitialiser ({activeFilters})
-          </button>
-        )}
+      <div>
+        <h1 className="text-2xl font-extrabold text-gray-900 dark:text-white">Saisie — Contrôle du personnel</h1>
+        <p className="text-gray-500 text-sm mt-1">Empreintes gants · Norme &lt;{NORME} UFC/boîte</p>
       </div>
 
-      {/* Filtres */}
-      <div className="card p-4 space-y-3">
-        <div className="flex flex-wrap gap-3 items-end">
-          {/* Année */}
+      {/* Sélection zone */}
+      <div className="flex gap-2 flex-wrap">
+        {Object.entries(ZONES_CONFIG).map(([code, cfg]) => (
+          <button key={code} onClick={() => setSelZone(code)}
+            style={{
+              borderColor: selZone === code ? cfg.color : 'transparent',
+              background:  selZone === code ? cfg.color : undefined,
+            }}
+            className={`flex items-center gap-2 px-5 py-2 rounded-full text-sm font-semibold border-2 transition-all
+              ${selZone === code
+                ? 'text-white'
+                : 'text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900'
+              }`}>
+            <span>{cfg.icon}</span>
+            {cfg.label}
+            <span className="text-xs opacity-70">({cfg.positions.length} positions)</span>
+          </button>
+        ))}
+      </div>
+
+      {/* Infos séance */}
+      <div className="card p-4">
+        <div className="grid grid-cols-3 gap-4">
           <div>
-            <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Année</label>
-            <div className="flex gap-1">
-              {ANNEES.map(a => (
-                <button key={a} onClick={() => { setAnnee(a); setDateDebut(''); setDateFin('') }}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
-                    annee===a && !dateDebut ? 'bg-brand text-white' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 hover:bg-gray-200'
-                  }`}>{a}</button>
-              ))}
-            </div>
-          </div>
-          {/* Position */}
-          <div>
-            <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Position</label>
-            <select value={filtrePosition} onChange={e => setFiltrePosition(e.target.value)} className="input py-1.5 text-sm w-28">
-              <option value="ALL">Toutes</option>
-              {POSITIONS.map(p => <option key={p} value={p}>{p}</option>)}
-            </select>
-          </div>
-          {/* Statut */}
-          <div>
-            <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Statut</label>
-            <select value={filtreStatut} onChange={e => setFiltreStatut(e.target.value)} className="input py-1.5 text-sm w-28">
-              <option value="ALL">Tous</option>
-              <option value="ok">Conforme</option>
-              <option value="nc">NC</option>
-            </select>
-          </div>
-          {/* Zone */}
-          <div>
-            <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Zone</label>
-            <select value={filtreZone} onChange={e => setFiltreZone(e.target.value)} className="input py-1.5 text-sm w-44">
-              <option value="ALL">Toutes</option>
-              <option value="LABO_MICRO">Labo Microbiologie</option>
-              <option value="REMPLISSAGE">Remplissage Poches</option>
-            </select>
-          </div>
-          {/* Opérateur */}
-          <div>
-            <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Opérateur</label>
-            <input type="text" placeholder="Rechercher..." value={filtreOperateur}
-              onChange={e => setFiltreOperateur(e.target.value)}
-              className="input py-1.5 text-sm w-36"/>
-          </div>
-          {/* Lot */}
-          <div>
-            <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Lot</label>
-            <input type="text" placeholder="N° lot..." value={filtreLot}
-              onChange={e => setFiltreLot(e.target.value)}
-              className="input py-1.5 text-sm w-32"/>
-          </div>
-          {/* Produit */}
-          <div>
-            <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Produit</label>
-            <input type="text" placeholder="Produit..." value={filtreProduit}
-              onChange={e => setFiltreProduit(e.target.value)}
-              className="input py-1.5 text-sm w-32"/>
-          </div>
-        </div>
-        <div className="flex flex-wrap gap-3 items-end pt-2 border-t border-gray-100 dark:border-gray-800">
-          <div>
-            <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Du</label>
-            <input type="date" value={dateDebut} onChange={e => setDateDebut(e.target.value)} className="input py-1.5 text-sm w-36"/>
+            <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1.5">Date *</label>
+            <input type="date" value={date} onChange={e => setDate(e.target.value)} className="input text-sm py-1.5"/>
           </div>
           <div>
-            <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Au</label>
-            <input type="date" value={dateFin} onChange={e => setDateFin(e.target.value)} className="input py-1.5 text-sm w-36"/>
+            <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1.5">N° Lot</label>
+            <input type="text" value={lot} onChange={e => setLot(e.target.value)}
+              placeholder="Ex: LOT-2026-001" className="input text-sm py-1.5"/>
           </div>
-          <div className="ml-auto self-end text-xs text-gray-400 font-mono pb-1.5">{total} mesure{total>1?'s':''}</div>
+          <div>
+            <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1.5">Produit</label>
+            <input type="text" value={produit} onChange={e => setProduit(e.target.value)}
+              placeholder="Ex: Glucose 5%" className="input text-sm py-1.5"/>
+          </div>
         </div>
       </div>
 
       {/* Message */}
       {msg.text && (
         <div className={`rounded-xl px-4 py-3 text-sm font-medium ${
-          msg.type==='error' ? 'bg-red-50 border border-red-200 text-red-700'
-                             : 'bg-green-50 border border-green-200 text-green-700'
+          msg.type === 'error' ? 'bg-red-50 border border-red-200 text-red-700' :
+          msg.type === 'warn'  ? 'bg-amber-50 border border-amber-200 text-amber-700' :
+                                 'bg-green-50 border border-green-200 text-green-700'
         }`}>{msg.text}</div>
       )}
 
-      {/* Tableau */}
+      {/* Tableau saisie */}
       <div className="card overflow-hidden p-0">
-        {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-brand"/>
-          </div>
-        ) : rows.length === 0 ? (
-          <div className="text-center text-gray-400 py-12 text-sm">Aucun résultat pour cette sélection</div>
-        ) : (
-          <>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50 dark:bg-gray-800/50">
-                  <tr>
-                    {['Date','Opérateur','Position','UFC/boîte','Lot','Produit','Statut','Actions'].map(h => (
-                      <th key={h} className="text-left text-xs font-bold text-gray-500 uppercase tracking-wide px-3 py-3 whitespace-nowrap">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50 dark:divide-gray-800">
-                  {rows.map(row => {
-                    const statut = row.germes >= NORME_PERSONNEL ? 'nc' : 'ok'
-                    const s = STATUT_CFG[statut]
-                    const isEditing  = editId === row.id
-                    const isDeleting = deleting === row.id
 
-                    return (
-                      <tr key={row.id} className="transition-colors hover:bg-gray-50 dark:hover:bg-gray-800/30"
-                        style={{ background: isEditing ? 'var(--color-background-info)' : isDeleting ? '#fef2f210' : undefined }}>
-
-                        {/* Date */}
-                        <td className="px-3 py-2">
-                          {isEditing ? (
-                            <input type="date" value={editForm.date_controle}
-                              onChange={e => setEditForm(f=>({...f, date_controle:e.target.value}))}
-                              className="input py-1 text-xs w-32"/>
-                          ) : (
-                            <span className="font-mono text-xs text-gray-500 whitespace-nowrap">{fmtDate(row.date_controle)}</span>
-                          )}
-                        </td>
-
-                        {/* Opérateur */}
-                        <td className="px-3 py-2">
-                          {isEditing ? (
-                            <input type="text" value={editForm.operateur_nom}
-                              onChange={e => setEditForm(f=>({...f, operateur_nom:e.target.value}))}
-                              className="input py-1 text-xs w-36"/>
-                          ) : (
-                            <span className="text-xs font-medium text-gray-700 dark:text-gray-300">{row.operateur_nom || '—'}</span>
-                          )}
-                        </td>
-
-                        {/* Position */}
-                        <td className="px-3 py-2">
-                          {isEditing ? (
-                            <select value={editForm.position}
-                              onChange={e => setEditForm(f=>({...f, position:e.target.value}))}
-                              className="input py-1 text-xs w-20">
-                              {POSITIONS.map(p => <option key={p} value={p}>{p}</option>)}
-                            </select>
-                          ) : (
-                            <span className="font-mono text-xs font-bold text-brand">{row.position}</span>
-                          )}
-                        </td>
-
-                        {/* Germes */}
-                        <td className="px-3 py-2">
-                          {isEditing ? (
-                            <input type="number" min="0" step="1" value={editForm.germes}
-                              onChange={e => setEditForm(f=>({...f, germes:e.target.value}))}
-                              className="input py-1 text-xs w-20 font-mono text-center" autoFocus/>
-                          ) : (
-                            <span className={`font-mono font-bold text-xs ${row.germes >= NORME_PERSONNEL ? 'text-red-600' : 'text-green-600'}`}>
-                              {row.germes ?? '—'}
-                            </span>
-                          )}
-                        </td>
-
-                        {/* Lot */}
-                        <td className="px-3 py-2">
-                          {isEditing ? (
-                            <input type="text" value={editForm.lot}
-                              onChange={e => setEditForm(f=>({...f, lot:e.target.value}))}
-                              className="input py-1 text-xs w-24"/>
-                          ) : (
-                            <span className="text-xs text-gray-400">{row.lot || '—'}</span>
-                          )}
-                        </td>
-
-                        {/* Produit */}
-                        <td className="px-3 py-2">
-                          {isEditing ? (
-                            <input type="text" value={editForm.produit}
-                              onChange={e => setEditForm(f=>({...f, produit:e.target.value}))}
-                              className="input py-1 text-xs w-28"/>
-                          ) : (
-                            <span className="text-xs text-gray-400">{row.produit || '—'}</span>
-                          )}
-                        </td>
-
-                        {/* Statut */}
-                        <td className="px-3 py-2">
-                          <span className="text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap"
-                            style={{ background:s.bg, border:`1px solid ${s.border}`, color:s.txt }}>
-                            {s.label}
-                          </span>
-                        </td>
-
-                        {/* Actions */}
-                        <td className="px-3 py-2">
-                          {isEditing ? (
-                            <div className="flex gap-1.5">
-                              <button onClick={() => handleSaveEdit(row)} disabled={saving}
-                                className="text-xs bg-green-500 text-white px-2.5 py-1 rounded-lg font-medium flex items-center gap-1 disabled:opacity-50">
-                                {saving ? <span className="animate-spin inline-block w-3 h-3 border border-white border-t-transparent rounded-full"/> : '✓'} OK
-                              </button>
-                              <button onClick={() => { setEditId(null); setEditForm({}) }}
-                                className="text-xs text-gray-400 px-2 py-1 rounded-lg border border-gray-200 hover:bg-gray-100">✕</button>
-                            </div>
-                          ) : (
-                            <div className="flex gap-1.5">
-                              <button onClick={() => startEdit(row)}
-                                className="text-xs text-gray-400 hover:text-brand px-2 py-1 rounded border border-gray-200 hover:border-brand transition-colors">✏️</button>
-                              <button onClick={() => handleDelete(row.id)} disabled={isDeleting}
-                                className="text-xs text-gray-400 hover:text-red-600 px-2 py-1 rounded border border-gray-200 hover:border-red-300 transition-colors disabled:opacity-40">
-                                {isDeleting ? '...' : '🗑'}
-                              </button>
-                            </div>
-                          )}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
+        {/* En-têtes */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: `220px repeat(${positions.length}, 66px) 34px`,
+          gap: 8, padding: '8px 12px',
+          background: 'var(--color-background-secondary)',
+          borderBottom: '0.5px solid var(--color-border-tertiary)',
+        }}>
+          <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wide">Opérateur</div>
+          {positions.map(p => (
+            <div key={p} style={{ textAlign:'center' }}>
+              <div className="text-[11px] font-bold" style={{ color: POS_COLOR[p] }}>{p}</div>
+              <div className="text-[9px] text-gray-400">{POS_LABELS[p]}</div>
             </div>
+          ))}
+          <div/>
+        </div>
 
-            {/* Pagination */}
-            {totalPages > 1 && (
-              <div className="px-4 py-3 border-t border-gray-100 dark:border-gray-800 flex items-center justify-between">
-                <span className="text-xs text-gray-400">Page {page+1}/{totalPages} · {total} mesures</span>
-                <div className="flex gap-1.5">
-                  <button onClick={() => setPage(p => Math.max(0,p-1))} disabled={page===0}
-                    className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 disabled:opacity-30 hover:bg-gray-50">← Préc.</button>
-                  {Array.from({length:Math.min(5,totalPages)},(_,i)=>{
-                    const p = Math.max(0,Math.min(page-2,totalPages-5))+i
-                    return <button key={p} onClick={()=>setPage(p)}
-                      className={`text-xs w-8 h-7 rounded-lg border transition-colors ${page===p?'bg-navy text-white border-navy':'border-gray-200 hover:bg-gray-50'}`}>{p+1}</button>
-                  })}
-                  <button onClick={() => setPage(p => Math.min(totalPages-1,p+1))} disabled={page>=totalPages-1}
-                    className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 disabled:opacity-30 hover:bg-gray-50">Suiv. →</button>
-                </div>
-              </div>
-            )}
-          </>
-        )}
+        {/* Ligne norme */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: `220px repeat(${positions.length}, 66px) 34px`,
+          gap: 8, padding: '4px 12px',
+          background: 'var(--color-background-secondary)',
+          borderBottom: '0.5px solid var(--color-border-tertiary)',
+        }}>
+          <div className="text-[10px] text-gray-400 italic">Norme &lt;{NORME} UFC/boîte</div>
+          {positions.map(p => (
+            <div key={p} style={{ textAlign:'center', fontSize: 9, color: '#94a3b8' }}>UFC/bte</div>
+          ))}
+          <div/>
+        </div>
+
+        {/* Lignes opérateurs */}
+        {lignes.map((ligne, idx) => (
+          <LigneOperateur
+            key={ligne.id}
+            ligne={ligne}
+            operateurs={operateurs}
+            positions={positions}
+            onChange={l => updateLigne(idx, l)}
+            onRemove={() => removeLigne(idx)}
+          />
+        ))}
+
+        {/* Bouton ajouter + stats */}
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 12,
+          padding: '10px 12px',
+          borderTop: '0.5px solid var(--color-border-tertiary)',
+          background: 'var(--color-background-secondary)',
+        }}>
+          <button onClick={addLigne}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              fontSize: 12, fontWeight: 500,
+              padding: '6px 14px', borderRadius: 8,
+              border: '1.5px dashed var(--color-border-secondary)',
+              background: 'var(--color-background-primary)',
+              color: 'var(--color-text-secondary)', cursor: 'pointer',
+            }}>
+            <span style={{ fontSize: 16, lineHeight: 1 }}>+</span> Ajouter un opérateur
+          </button>
+
+          {stats.rens > 0 && (
+            <div className="flex items-center gap-3 text-xs">
+              <span className="text-green-600 font-semibold">{stats.conforme} conforme{stats.conforme > 1 ? 's' : ''}</span>
+              {stats.nc > 0 && <span className="text-red-600 font-semibold">{stats.nc} NC</span>}
+              <span className="text-gray-400">{stats.rens} mesure{stats.rens > 1 ? 's' : ''}</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Enregistrer */}
+      <div className="flex items-center gap-3">
+        <button onClick={handleSave} disabled={saving}
+          className="btn-primary flex items-center gap-2 px-6 py-2.5 text-sm disabled:opacity-50">
+          {saving
+            ? <><span className="animate-spin inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full"/>Enregistrement...</>
+            : <>💾 Enregistrer tout</>
+          }
+        </button>
+        <span className="text-xs text-gray-400">
+          {lignes.filter(l => l.operateur_nom?.trim()).length} opérateur{lignes.filter(l => l.operateur_nom?.trim()).length > 1 ? 's' : ''} · {zoneCfg.label}
+        </span>
+      </div>
+
+      {/* Légende */}
+      <div className="flex gap-4 text-xs text-gray-400 flex-wrap">
+        <span className="flex items-center gap-1.5">
+          <span style={{ width:12, height:12, borderRadius:4, background:'#f0fdf4', border:'1.5px solid #86efac', display:'inline-block'}}/>
+          Conforme (&lt;{NORME} UFC)
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span style={{ width:12, height:12, borderRadius:4, background:'#fef2f2', border:'1.5px solid #fca5a5', display:'inline-block'}}/>
+          Non conforme (≥{NORME} UFC)
+        </span>
+        <span style={{ marginLeft:'auto', fontStyle:'italic' }}>
+          {selZone === 'REMPLISSAGE' ? '4 positions — sans bustes (BD/BG)' : '6 positions — contrôle complet'}
+        </span>
       </div>
     </div>
   )
