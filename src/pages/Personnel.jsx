@@ -4,8 +4,8 @@ import { supabase } from '@/lib/supabaseClient'
 const NORME = 5
 const POSITIONS = ['MD','MG','BD','BG','AVD','AVG']
 const POS_LABELS = {
-  MD:'Main droite', MG:'Main gauche', BD:'Bras droit',
-  BG:'Bras gauche', AVD:'Avant-bras droit', AVG:'Avant-bras gauche'
+  MD:'Main droite', MG:'Main gauche', BD:'Buste droit',
+  BG:'Buste gauche', AVD:'Avant-bras droit', AVG:'Avant-bras gauche'
 }
 function getTrimestres(a) {
   return {
