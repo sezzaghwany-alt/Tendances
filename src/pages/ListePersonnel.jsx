@@ -32,6 +32,9 @@ export default function ListePersonnel() {
   const [filtrePosition, setFiltrePosition] = useState('ALL')
   const [filtreStatut,   setFiltreStatut]   = useState('ALL')
   const [filtreOperateur,setFiltreOperateur]= useState('')
+  const [filtreZone,     setFiltreZone]     = useState('ALL')
+  const [filtreLot,      setFiltreLot]      = useState('')
+  const [filtreProduit,  setFiltreProduit]  = useState('')
   const [dateDebut,      setDateDebut]      = useState('')
   const [dateFin,        setDateFin]        = useState('')
   const [annee,          setAnnee]          = useState(new Date().getFullYear())
@@ -52,19 +55,22 @@ export default function ListePersonnel() {
       .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
 
     if (filtrePosition !== 'ALL') q = q.eq('position', filtrePosition)
+    if (filtreZone     !== 'ALL') q = q.eq('zone', filtreZone)
     if (filtreStatut   !== 'ALL') {
       if (filtreStatut === 'ok') q = q.lt('germes', NORME_PERSONNEL)
       else                       q = q.gte('germes', NORME_PERSONNEL)
     }
     if (filtreOperateur.trim()) q = q.ilike('operateur_nom', `%${filtreOperateur.trim()}%`)
+    if (filtreLot.trim())       q = q.ilike('lot',           `%${filtreLot.trim()}%`)
+    if (filtreProduit.trim())   q = q.ilike('produit',       `%${filtreProduit.trim()}%`)
 
     const { data, count, error } = await q
     if (!error) { setRows(data || []); setTotal(count || 0) }
     setLoading(false)
   }
 
-  useEffect(() => { setPage(0) }, [filtrePosition, filtreStatut, filtreOperateur, dateDebut, dateFin, annee])
-  useEffect(() => { load() }, [page, filtrePosition, filtreStatut, filtreOperateur, dateDebut, dateFin, annee])
+  useEffect(() => { setPage(0) }, [filtrePosition, filtreZone, filtreStatut, filtreOperateur, filtreLot, filtreProduit, dateDebut, dateFin, annee])
+  useEffect(() => { load() }, [page, filtrePosition, filtreZone, filtreStatut, filtreOperateur, filtreLot, filtreProduit, dateDebut, dateFin, annee])
 
   function showMsg(text, type='ok') {
     setMsg({ text, type })
@@ -117,11 +123,12 @@ export default function ListePersonnel() {
   }
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
-  const activeFilters = [filtrePosition!=='ALL',filtreStatut!=='ALL',filtreOperateur.trim(),dateDebut,dateFin].filter(Boolean).length
+  const activeFilters = [filtrePosition!=='ALL',filtreZone!=='ALL',filtreStatut!=='ALL',filtreOperateur.trim(),filtreLot.trim(),filtreProduit.trim(),dateDebut,dateFin].filter(Boolean).length
 
   function resetFiltres() {
-    setFiltrePosition('ALL'); setFiltreStatut('ALL')
-    setFiltreOperateur(''); setDateDebut(''); setDateFin('')
+    setFiltrePosition('ALL'); setFiltreStatut('ALL'); setFiltreZone('ALL')
+    setFiltreOperateur(''); setFiltreLot(''); setFiltreProduit('')
+    setDateDebut(''); setDateFin('')
   }
 
   return (
@@ -170,12 +177,35 @@ export default function ListePersonnel() {
               <option value="nc">NC</option>
             </select>
           </div>
+          {/* Zone */}
+          <div>
+            <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Zone</label>
+            <select value={filtreZone} onChange={e => setFiltreZone(e.target.value)} className="input py-1.5 text-sm w-44">
+              <option value="ALL">Toutes</option>
+              <option value="LABO_MICRO">Labo Microbiologie</option>
+              <option value="REMPLISSAGE">Remplissage Poches</option>
+            </select>
+          </div>
           {/* Opérateur */}
           <div>
             <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Opérateur</label>
             <input type="text" placeholder="Rechercher..." value={filtreOperateur}
               onChange={e => setFiltreOperateur(e.target.value)}
-              className="input py-1.5 text-sm w-40"/>
+              className="input py-1.5 text-sm w-36"/>
+          </div>
+          {/* Lot */}
+          <div>
+            <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Lot</label>
+            <input type="text" placeholder="N° lot..." value={filtreLot}
+              onChange={e => setFiltreLot(e.target.value)}
+              className="input py-1.5 text-sm w-32"/>
+          </div>
+          {/* Produit */}
+          <div>
+            <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Produit</label>
+            <input type="text" placeholder="Produit..." value={filtreProduit}
+              onChange={e => setFiltreProduit(e.target.value)}
+              className="input py-1.5 text-sm w-32"/>
           </div>
         </div>
         <div className="flex flex-wrap gap-3 items-end pt-2 border-t border-gray-100 dark:border-gray-800">
