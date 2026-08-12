@@ -1,3 +1,4 @@
+// v3.0 - 2026-08-12 - colonnes: date_controle, operateur_nom, position, germes, lot, produit, statut
 import { useEffect, useState, useMemo } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 
