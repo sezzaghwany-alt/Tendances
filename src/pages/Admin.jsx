@@ -1095,6 +1095,313 @@ function NormesEauTab() {
   )
 }
 
+
+// ── Export Excel ──────────────────────────────────────────────────────────
+function ExportTab() {
+  const annee = new Date().getFullYear()
+  const [loading, setLoading] = useState({})
+  const [msg,     setMsg]     = useState({ text:'', type:'' })
+
+  function showMsg(text, type='ok') {
+    setMsg({ text, type })
+    setTimeout(() => setMsg({ text:'', type:'' }), 5000)
+  }
+
+  // Charger SheetJS dynamiquement
+  async function loadXLSX() {
+    if (window.XLSX) return window.XLSX
+    return new Promise((resolve, reject) => {
+      const s = document.createElement('script')
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'
+      s.onload  = () => resolve(window.XLSX)
+      s.onerror = reject
+      document.head.appendChild(s)
+    })
+  }
+
+  function fmtDate(iso) {
+    if (!iso) return ''
+    const [y,m,d] = iso.split('-'); return `${d}/${m}/${y}`
+  }
+
+  const STATUT_LABELS = { ok:'Conforme', alerte:'Alerte', action:'Action', nc:'NC' }
+
+  // ── Export Environnement ──────────────────────────────────────────────
+  async function exportEnvironnement(scope) {
+    setLoading(l => ({...l, env_filtered: scope==='filtered', env_year: scope==='year'}))
+    try {
+      const XLSX = await loadXLSX()
+      const dDebut = scope === 'year' ? `${annee}-01-01` : undefined
+      const dFin   = scope === 'year' ? `${annee}-12-31` : undefined
+
+      let all = [], from = 0
+      while (true) {
+        let q = supabase.from('controles')
+          .select('date_controle, type_controle, point, germes, classe, statut, lot, zones(code,label), salles(label)')
+          .in('statut', ['alerte','action','nc'])
+          .order('date_controle', { ascending: false })
+          .range(from, from + 999)
+        if (dDebut) q = q.gte('date_controle', dDebut).lte('date_controle', dFin)
+        const { data, error } = await q
+        if (error || !data?.length) break
+        all = [...all, ...data]
+        if (data.length < 1000) break
+        from += 1000
+      }
+
+      if (!all.length) return showMsg('Aucune alerte à exporter', 'warn')
+
+      const rows = all.map(r => ({
+        'Date':          fmtDate(r.date_controle),
+        'Zone':          r.zones?.label || '',
+        'Salle':         r.salles?.label || '',
+        'Point':         r.point,
+        'Type':          r.type_controle,
+        'Classe':        r.classe,
+        'Germes (UFC)':  r.germes,
+        'Lot':           r.lot || '',
+        'Statut':        STATUT_LABELS[r.statut] || r.statut,
+      }))
+
+      const wb = XLSX.utils.book_new()
+      const ws = XLSX.utils.json_to_sheet(rows)
+
+      // Largeurs colonnes
+      ws['!cols'] = [
+        {wch:12},{wch:28},{wch:22},{wch:8},{wch:10},{wch:8},{wch:12},{wch:14},{wch:12}
+      ]
+
+      // Style en-têtes
+      const range = XLSX.utils.decode_range(ws['!ref'])
+      for (let C = range.s.c; C <= range.e.c; C++) {
+        const addr = XLSX.utils.encode_cell({r:0, c:C})
+        if (!ws[addr]) continue
+        ws[addr].s = { font:{bold:true, color:{rgb:'FFFFFF'}}, fill:{fgColor:{rgb:'0F2342'}}, alignment:{horizontal:'center'} }
+      }
+
+      XLSX.utils.book_append_sheet(wb, ws, `Alertes Env ${scope==='year'?annee:'Filtrées'}`)
+      XLSX.writeFile(wb, `Alertes_Environnement_${scope==='year'?annee:'filtrees'}_${new Date().toISOString().slice(0,10)}.xlsx`)
+      showMsg(`✅ Export réussi — ${all.length} alertes`)
+    } catch(e) {
+      showMsg('Erreur export : ' + e.message, 'error')
+    }
+    setLoading(l => ({...l, env_filtered: false, env_year: false}))
+  }
+
+  // ── Export Eaux ───────────────────────────────────────────────────────
+  async function exportEaux(scope) {
+    setLoading(l => ({...l, eaux_filtered: scope==='filtered', eaux_year: scope==='year'}))
+    try {
+      const XLSX = await loadXLSX()
+      let q = supabase.from('controles_eaux')
+        .select('date_controle, type_eau, logbook, point_code, parametre, valeur, valeur_text, unite, statut')
+        .in('statut', ['alerte','action','nc'])
+        .order('date_controle', { ascending: false })
+      if (scope === 'year') q = q.gte('date_controle', `${annee}-01-01`).lte('date_controle', `${annee}-12-31`)
+
+      const { data, error } = await q
+      if (error) throw new Error(error.message)
+      if (!data?.length) return showMsg('Aucune alerte eaux à exporter', 'warn')
+
+      const rows = data.map(r => ({
+        'Date':        fmtDate(r.date_controle),
+        'Type eau':    r.type_eau,
+        'Logbook':     r.logbook,
+        'Point':       r.point_code,
+        'Paramètre':   r.parametre,
+        'Résultat':    r.valeur !== null ? r.valeur : (r.valeur_text || ''),
+        'Unité':       r.unite || '',
+        'Statut':      STATUT_LABELS[r.statut] || r.statut,
+      }))
+
+      const wb = XLSX.utils.book_new()
+      const ws = XLSX.utils.json_to_sheet(rows)
+      ws['!cols'] = [{wch:12},{wch:10},{wch:10},{wch:14},{wch:16},{wch:12},{wch:10},{wch:12}]
+
+      const range = XLSX.utils.decode_range(ws['!ref'])
+      for (let C = range.s.c; C <= range.e.c; C++) {
+        const addr = XLSX.utils.encode_cell({r:0, c:C})
+        if (!ws[addr]) continue
+        ws[addr].s = { font:{bold:true, color:{rgb:'FFFFFF'}}, fill:{fgColor:{rgb:'185FA5'}}, alignment:{horizontal:'center'} }
+      }
+
+      XLSX.utils.book_append_sheet(wb, ws, `Alertes Eaux ${scope==='year'?annee:'Filtrées'}`)
+      XLSX.writeFile(wb, `Alertes_Eaux_${scope==='year'?annee:'filtrees'}_${new Date().toISOString().slice(0,10)}.xlsx`)
+      showMsg(`✅ Export réussi — ${data.length} alertes eaux`)
+    } catch(e) {
+      showMsg('Erreur export : ' + e.message, 'error')
+    }
+    setLoading(l => ({...l, eaux_filtered: false, eaux_year: false}))
+  }
+
+  // ── Export Personnel ──────────────────────────────────────────────────
+  async function exportPersonnel(scope) {
+    setLoading(l => ({...l, pers_filtered: scope==='filtered', pers_year: scope==='year'}))
+    try {
+      const XLSX = await loadXLSX()
+      let q = supabase.from('controles_personnel')
+        .select('date_controle, operateur_nom, position, germes, lot, produit, statut')
+        .eq('statut', 'nc')
+        .order('date_controle', { ascending: false })
+      if (scope === 'year') q = q.gte('date_controle', `${annee}-01-01`).lte('date_controle', `${annee}-12-31`)
+
+      const { data, error } = await q
+      if (error) throw new Error(error.message)
+      if (!data?.length) return showMsg('Aucune alerte personnel à exporter', 'warn')
+
+      const POS = { MD:'Main droite', MG:'Main gauche', BD:'Buste droit', BG:'Buste gauche', AVD:'Avant-bras droit', AVG:'Avant-bras gauche' }
+
+      const rows = data.map(r => ({
+        'Date':          fmtDate(r.date_controle),
+        'Opérateur':     r.operateur_nom || '',
+        'Position':      r.position,
+        'Position (libellé)': POS[r.position] || r.position,
+        'UFC/boîte':     r.germes,
+        'Lot':           r.lot     || '',
+        'Produit':       r.produit || '',
+        'Statut':        r.germes >= 5 ? 'NC (≥5 UFC)' : 'Conforme',
+      }))
+
+      const wb = XLSX.utils.book_new()
+      const ws = XLSX.utils.json_to_sheet(rows)
+      ws['!cols'] = [{wch:12},{wch:22},{wch:10},{wch:18},{wch:10},{wch:14},{wch:16},{wch:14}]
+
+      const range = XLSX.utils.decode_range(ws['!ref'])
+      for (let C = range.s.c; C <= range.e.c; C++) {
+        const addr = XLSX.utils.encode_cell({r:0, c:C})
+        if (!ws[addr]) continue
+        ws[addr].s = { font:{bold:true, color:{rgb:'FFFFFF'}}, fill:{fgColor:{rgb:'0D9488'}}, alignment:{horizontal:'center'} }
+      }
+
+      XLSX.utils.book_append_sheet(wb, ws, `Alertes Personnel ${scope==='year'?annee:'Filtrées'}`)
+      XLSX.writeFile(wb, `Alertes_Personnel_${scope==='year'?annee:'filtrees'}_${new Date().toISOString().slice(0,10)}.xlsx`)
+      showMsg(`✅ Export réussi — ${data.length} NC personnel`)
+    } catch(e) {
+      showMsg('Erreur export : ' + e.message, 'error')
+    }
+    setLoading(l => ({...l, pers_filtered: false, pers_year: false}))
+  }
+
+  const MODULES = [
+    {
+      id: 'env',
+      label: 'Environnement',
+      icon: '🔬',
+      color: '#7c3aed',
+      bg: '#F3E8FF',
+      desc: 'Alertes ACTIF · PASSIF · SURFACE — toutes zones',
+      cols: 'Date · Zone · Salle · Point · Type · Classe · Germes · Lot · Statut',
+      onYear:     () => exportEnvironnement('year'),
+      onFiltered: () => exportEnvironnement('filtered'),
+      loadYear:     loading.env_year,
+      loadFiltered: loading.env_filtered,
+    },
+    {
+      id: 'eaux',
+      label: 'Eaux pharmaceutiques',
+      icon: '💧',
+      color: '#185FA5',
+      bg: '#E8F4FD',
+      desc: 'Alertes EPU · EPPI · EA — tous paramètres',
+      cols: 'Date · Type eau · Logbook · Point · Paramètre · Résultat · Unité · Statut',
+      onYear:     () => exportEaux('year'),
+      onFiltered: () => exportEaux('filtered'),
+      loadYear:     loading.eaux_year,
+      loadFiltered: loading.eaux_filtered,
+    },
+    {
+      id: 'pers',
+      label: 'Personnel',
+      icon: '🧤',
+      color: '#0D9488',
+      bg: '#E0F7F5',
+      desc: 'Non-conformités empreintes gants — tous opérateurs',
+      cols: 'Date · Opérateur · Position · UFC/boîte · Lot · Produit · Statut',
+      onYear:     () => exportPersonnel('year'),
+      onFiltered: () => exportPersonnel('filtered'),
+      loadYear:     loading.pers_year,
+      loadFiltered: loading.pers_filtered,
+    },
+  ]
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <h2 className="text-lg font-bold text-gray-800 dark:text-white">Export Excel — Alertes</h2>
+        <p className="text-sm text-gray-500 mt-1">Exporte les non-conformités et dépassements de chaque module</p>
+      </div>
+
+      {msg.text && (
+        <div className={`rounded-xl px-4 py-3 text-sm font-medium ${
+          msg.type==='error' ? 'bg-red-50 border border-red-200 text-red-700' :
+          msg.type==='warn'  ? 'bg-amber-50 border border-amber-200 text-amber-700' :
+                               'bg-green-50 border border-green-200 text-green-700'
+        }`}>{msg.text}</div>
+      )}
+
+      <div className="grid grid-cols-1 gap-4">
+        {MODULES.map(m => (
+          <div key={m.id} className="card p-5 border-l-4" style={{ borderLeftColor: m.color }}>
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl"
+                  style={{ background: m.bg }}>
+                  {m.icon}
+                </div>
+                <div>
+                  <div className="font-bold text-gray-900 dark:text-white">{m.label}</div>
+                  <div className="text-xs text-gray-500 mt-0.5">{m.desc}</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="text-[10px] font-mono text-gray-400 bg-gray-50 dark:bg-gray-800/50 rounded-lg px-3 py-1.5 mb-4">
+              📋 Colonnes : {m.cols}
+            </div>
+
+            <div className="flex gap-3 flex-wrap">
+              {/* Bouton année courante */}
+              <button
+                onClick={m.onYear}
+                disabled={m.loadYear || m.loadFiltered}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold border-2 transition-all disabled:opacity-50"
+                style={{ borderColor: m.color, color: m.color, background: m.bg }}>
+                {m.loadYear
+                  ? <span className="animate-spin inline-block w-4 h-4 border-2 border-current border-t-transparent rounded-full"/>
+                  : '📥'
+                }
+                Export {new Date().getFullYear()} complet
+              </button>
+
+              {/* Bouton alertes uniquement */}
+              <button
+                onClick={m.onFiltered}
+                disabled={m.loadYear || m.loadFiltered}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold border-2 transition-all disabled:opacity-50 border-gray-200 text-gray-600 hover:border-gray-300 bg-white dark:bg-gray-900 dark:border-gray-700 dark:text-gray-300">
+                {m.loadFiltered
+                  ? <span className="animate-spin inline-block w-4 h-4 border-2 border-current border-t-transparent rounded-full"/>
+                  : '📋'
+                }
+                Alertes uniquement (toutes années)
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="card p-4 bg-gray-50 dark:bg-gray-800/50">
+        <div className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">ℹ️ Informations</div>
+        <ul className="text-xs text-gray-500 space-y-1">
+          <li>• <b>Export {new Date().getFullYear()} complet</b> — toutes les alertes et NC de l'année en cours</li>
+          <li>• <b>Alertes uniquement</b> — tous les dépassements sans limite d'année (historique complet)</li>
+          <li>• Le fichier Excel est généré directement dans ton navigateur — aucune donnée ne transite par un serveur externe</li>
+          <li>• Format : .xlsx compatible Excel, LibreOffice et Google Sheets</li>
+        </ul>
+      </div>
+    </div>
+  )
+}
+
 // ── Page principale ───────────────────────────────────────────────────────────
 const TABS = [
   { id: 'users',   label: '👥 Utilisateurs' },
@@ -1104,6 +1411,7 @@ const TABS = [
   { id: 'normes',        label: '📐 Normes' },
   { id: 'points_eau',    label: '💧 Points Eaux' },
   { id: 'normes_eau',    label: '📋 Normes Eaux' },
+  { id: 'export',        label: '📥 Export Excel' },
 ]
 
 export default function Admin() {
@@ -1131,6 +1439,7 @@ export default function Admin() {
       {tab === 'normes'     && <NormesTab/>}
       {tab === 'points_eau'  && <PointsEauTab/>}
       {tab === 'normes_eau'  && <NormesEauTab/>}
+      {tab === 'export'       && <ExportTab/>}
     </div>
   )
 }
