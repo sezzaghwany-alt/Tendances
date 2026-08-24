@@ -130,16 +130,29 @@ export default function SaisiePersonnel() {
   const zoneCfg   = ZONES_CONFIG[selZone]
   const positions = zoneCfg.positions
 
-  function loadOperateurs() {
-    // Charger tous les noms distincts — limit élevée pour ne rien manquer
-    supabase.from('controles_personnel')
+  async function loadOperateurs() {
+    // Utiliser la vue operateurs_distincts pour obtenir tous les noms sans pagination
+    const { data, error } = await supabase
+      .from('operateurs_distincts')
       .select('operateur_nom')
-      .not('operateur_nom', 'is', null)
-      .limit(5000)
-      .then(({ data }) => {
-        const noms = [...new Set((data||[]).map(r => r.operateur_nom).filter(Boolean))].sort()
-        setOperateurs(noms)
-      })
+    if (!error && data?.length) {
+      setOperateurs(data.map(r => r.operateur_nom).filter(Boolean).sort())
+    } else {
+      // Fallback : pagination manuelle
+      let all = [], from = 0
+      while (true) {
+        const { data: d, error: e } = await supabase
+          .from('controles_personnel')
+          .select('operateur_nom')
+          .not('operateur_nom', 'is', null)
+          .range(from, from + 999)
+        if (e || !d?.length) break
+        all = [...all, ...d]
+        if (d.length < 1000) break
+        from += 1000
+      }
+      setOperateurs([...new Set(all.map(r => r.operateur_nom).filter(Boolean))].sort())
+    }
   }
 
   useEffect(() => { loadOperateurs() }, [])
