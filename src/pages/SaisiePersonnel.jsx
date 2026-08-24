@@ -131,9 +131,11 @@ export default function SaisiePersonnel() {
   const positions = zoneCfg.positions
 
   function loadOperateurs() {
+    // Charger tous les noms distincts — limit élevée pour ne rien manquer
     supabase.from('controles_personnel')
       .select('operateur_nom')
       .not('operateur_nom', 'is', null)
+      .limit(5000)
       .then(({ data }) => {
         const noms = [...new Set((data||[]).map(r => r.operateur_nom).filter(Boolean))].sort()
         setOperateurs(noms)
