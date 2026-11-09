@@ -10,13 +10,14 @@ const BLOCS = [
     label: 'Environnement',
     icon: '🔬',
     color: '#7c3aed',
-    roles: ['admin','operateur','lecteur'],
+    roles: ['admin','cq','operateur','lecteur'],
     links: [
-      { to: '/saisie2026',  label: 'Saisie 2026',    roles: ['admin','operateur'] },
-      { to: '/tendances',   label: 'Tendances',       roles: ['admin','operateur','lecteur'] },
-      { to: '/points',      label: 'Points / Salles', roles: ['admin','operateur','lecteur'] },
-      { to: '/alertes',          label: 'Alertes',            roles: ['admin','operateur','lecteur'], badge: true },
-      { to: '/liste-controles',  label: 'Liste des données', roles: ['admin','operateur','lecteur'] },
+      { to: '/saisie2026',  label: 'Saisie 2026',    roles: ['admin','cq','operateur'] },
+      { to: '/tendances',   label: 'Tendances',       roles: ['admin','cq','operateur','lecteur'] },
+      { to: '/points',      label: 'Points / Salles', roles: ['admin','cq','operateur','lecteur'] },
+      { to: '/alertes',          label: 'Alertes',            roles: ['admin','cq','operateur','lecteur'], badge: true },
+      { to: '/liste-controles',  label: 'Liste des données', roles: ['admin','cq','operateur','lecteur'] },
+      { to: '/non-conformites',  label: 'Non-conformités',   roles: ['admin','cq','operateur','lecteur'] },
     ]
   },
   {
@@ -24,12 +25,12 @@ const BLOCS = [
     label: 'Eaux',
     icon: '💧',
     color: '#0284c7',
-    roles: ['admin','operateur','lecteur'],
+    roles: ['admin','cq','operateur','lecteur'],
     links: [
-      { to: '/saisie-eaux',      label: 'Saisie eaux',       roles: ['admin','operateur'] },
-      { to: '/liste-eaux',       label: 'Liste des données', roles: ['admin','operateur','lecteur'] },
-      { to: '/tendances-eaux',   label: 'Tendances eaux',    roles: ['admin','operateur','lecteur'] },
-      { to: '/alertes-eaux',     label: 'Alertes eaux',      roles: ['admin','operateur','lecteur'], badge: true },
+      { to: '/saisie-eaux',      label: 'Saisie eaux',       roles: ['admin','cq','operateur'] },
+      { to: '/liste-eaux',       label: 'Liste des données', roles: ['admin','cq','operateur','lecteur'] },
+      { to: '/tendances-eaux',   label: 'Tendances eaux',    roles: ['admin','cq','operateur','lecteur'] },
+      { to: '/alertes-eaux',     label: 'Alertes eaux',      roles: ['admin','cq','operateur','lecteur'], badge: true },
     ]
   },
   {
@@ -37,12 +38,12 @@ const BLOCS = [
     label: 'Personnel',
     icon: '🧤',
     color: '#0d9488',
-    roles: ['admin','operateur','lecteur'],
+    roles: ['admin','cq','operateur','lecteur'],
     links: [
-      { to: '/saisie-personnel',    label: 'Saisie personnel',    roles: ['admin','operateur'] },
-      { to: '/personnel',           label: 'Analyse personnel',   roles: ['admin','operateur','lecteur'] },
-      { to: '/alertes-personnel',    label: 'Alertes personnel',    roles: ['admin','operateur','lecteur'] },
-      { to: '/liste-personnel',    label: 'Liste des données',    roles: ['admin','operateur','lecteur'] },
+      { to: '/saisie-personnel',    label: 'Saisie personnel',    roles: ['admin','cq','operateur'] },
+      { to: '/personnel',           label: 'Analyse personnel',   roles: ['admin','cq','operateur','lecteur'] },
+      { to: '/alertes-personnel',    label: 'Alertes personnel',    roles: ['admin','cq','operateur','lecteur'] },
+      { to: '/liste-personnel',    label: 'Liste des données',    roles: ['admin','cq','operateur','lecteur'] },
     ]
   },
 ]
@@ -86,7 +87,7 @@ export default function Navbar({ alertCount = 0 }) {
   // Déterminer quel bloc est actif selon la route courante
   function getBlocActif() {
     const path = location.pathname
-    if (['/saisie2026','/tendances','/points','/alertes'].some(p => path.startsWith(p))) return 'env'
+    if (['/saisie2026','/tendances','/points','/alertes','/liste-controles','/non-conformites'].some(p => path.startsWith(p))) return 'env'
     if (['/saisie-eaux','/tendances-eaux','/alertes-eaux'].some(p => path.startsWith(p))) return 'eaux'
     if (['/saisie-personnel','/personnel','/alertes-personnel'].some(p => path.startsWith(p))) return 'personnel'
     return null
