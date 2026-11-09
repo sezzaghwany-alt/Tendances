@@ -1,4 +1,5 @@
-import { useEffect, useState } from  'react'
+import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { supabase } from '@/lib/supabaseClient'
 
 const ZONES_POCHES = ['PREPARATION','REMPLISSAGE','PREP_REMPL']
@@ -16,6 +17,20 @@ function fmtDate(iso) {
   return `${d}/${m}/${y}`
 }
 
+
+// Lien vers la fiche NC rattachée (rapprochement)
+function FicheCell({ row }) {
+  const lien = Array.isArray(row.nc_mesures) ? row.nc_mesures[0] : row.nc_mesures
+  const nc = lien?.non_conformites
+  if (nc) return (
+    <Link to={`/non-conformites?nc=${nc.id}`} className="font-mono font-bold text-brand hover:underline whitespace-nowrap">
+      {nc.numero}
+    </Link>
+  )
+  if (['action','nc'].includes(row.statut)) return <span className="text-xs font-semibold text-red-600 whitespace-nowrap">Sans fiche</span>
+  return <span className="text-gray-300">—</span>
+}
+
 export default function Alertes() {
   const [alertes,    setAlertes]    = useState([])
   const [loading,    setLoading]    = useState(true)
@@ -27,7 +42,7 @@ export default function Alertes() {
 
   useEffect(() => {
     supabase.from('controles')
-      .select('*, zones(code, label), salles(label)')
+      .select('*, zones(code, label), salles(label), nc_mesures(nc_id, non_conformites(id, numero, statut))')
       .in('statut', ['alerte','action','nc'])
       .gte('date_controle', `${annee}-01-01`)
       .lte('date_controle', `${annee}-12-31`)
@@ -107,7 +122,7 @@ export default function Alertes() {
             <table className="w-full text-xs">
               <thead>
                 <tr className="border-b border-gray-100 dark:border-gray-800">
-                  {['Date','Zone','Salle','Point','Type','Cl.','Germes (UFC)','Statut'].map(h => (
+                  {['Date','Zone','Salle','Point','Type','Cl.','Germes (UFC)','Statut','Fiche NC'].map(h => (
                     <th key={h} className="text-left font-bold text-gray-400 uppercase tracking-wide pb-2 pr-4">{h}</th>
                   ))}
                 </tr>
@@ -131,6 +146,9 @@ export default function Alertes() {
                           style={{ background:s?.bg, border:`1px solid ${s?.border}`, color:s?.txt }}>
                           {s?.label}
                         </span>
+                      </td>
+                      <td className="py-2 pr-4">
+                        <FicheCell row={a}/>
                       </td>
                     </tr>
                   )
