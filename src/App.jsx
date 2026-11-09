@@ -19,6 +19,7 @@ import Backup from '@/pages/Backup'
 import SaisieEaux from '@/pages/SaisieEaux'
 import ListeEaux      from '@/pages/ListeEaux'
 import ListeControles from '@/pages/ListeControles'
+import NonConformites from '@/pages/NonConformites'
 import ListePersonnel from '@/pages/ListePersonnel'
 import TendancesEaux from '@/pages/TendancesEaux'
 import AlertesEaux from '@/pages/AlertesEaux'
@@ -57,6 +58,7 @@ function Layout() {
           <Route path="/saisie-personnel" element={<ProtectedRoute requireOperateur><SaisiePersonnel /></ProtectedRoute>} />
           <Route path="/backup" element={<ProtectedRoute requireAdmin><Backup /></ProtectedRoute>} />
           <Route path="/liste-controles" element={<ListeControles />} />
+          <Route path="/non-conformites" element={<NonConformites />} />
           <Route path="/liste-personnel"  element={<ListePersonnel />} />
           <Route path="/liste-eaux"   element={<ListeEaux />} />
           <Route path="/saisie-eaux" element={<ProtectedRoute requireOperateur><SaisieEaux /></ProtectedRoute>} />
