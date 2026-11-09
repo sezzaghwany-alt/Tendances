@@ -160,9 +160,10 @@ Cette action est irréversible.`)) return
   const ROLE_COLORS = {
     admin:     'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300',
     operateur: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300',
+    cq:        'bg-teal-100 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300',
     lecteur:   'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400',
   }
-  const ROLE_ICONS = { admin:'👑', operateur:'✏️', lecteur:'👁️' }
+  const ROLE_ICONS = { admin:'👑', cq:'🔬', operateur:'✏️', lecteur:'👁️' }
 
   return (
     <div className="space-y-4">
@@ -203,7 +204,8 @@ Cette action est irréversible.`)) return
               <select className="input" value={form.role} onChange={e => setForm(f=>({...f, role: e.target.value}))}>
                 <option value="lecteur">👁️ Lecteur — consultation uniquement</option>
                 <option value="operateur">✏️ Opérateur — saisie + consultation</option>
-                <option value="admin">👑 Administrateur — accès complet</option>
+                <option value="cq">🔬 CQ — saisie + gestion des NC</option>
+                <option value="admin">👑 Administrateur (AQ) — accès complet, clôture des NC</option>
               </select>
             </div>
             <div>
@@ -249,6 +251,7 @@ Cette action est irréversible.`)) return
                         onChange={e => setEditForm(f=>({...f, role: e.target.value}))}>
                         <option value="lecteur">👁️ Lecteur</option>
                         <option value="operateur">✏️ Opérateur</option>
+                        <option value="cq">🔬 CQ</option>
                         <option value="admin">👑 Admin</option>
                       </select>
                     </td>
