@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo } from 'react'
+import { Link } from 'react-router-dom'
 import { supabase } from '@/lib/supabaseClient'
 
 const ZONES_POCHES = ['PREPARATION','REMPLISSAGE','PREP_REMPL']
@@ -27,6 +28,20 @@ function calcStatut(germes, norme, alerte, action) {
   if (action > 0 && g >= action) return 'action'
   if (alerte > 0 && g >= alerte) return 'alerte'
   return 'ok'
+}
+
+
+// Lien vers la fiche NC rattachée (rapprochement)
+function FicheCell({ row }) {
+  const lien = Array.isArray(row.nc_mesures) ? row.nc_mesures[0] : row.nc_mesures
+  const nc = lien?.non_conformites
+  if (nc) return (
+    <Link to={`/non-conformites?nc=${nc.id}`} className="font-mono font-bold text-brand hover:underline whitespace-nowrap">
+      {nc.numero}
+    </Link>
+  )
+  if (['action','nc'].includes(row.statut)) return <span className="text-xs font-semibold text-red-600 whitespace-nowrap">Sans fiche</span>
+  return <span className="text-gray-300">—</span>
 }
 
 export default function ListeControles() {
@@ -123,7 +138,7 @@ export default function ListeControles() {
     const dFin   = dateFin   || `${annee}-12-31`
 
     let q = supabase.from('controles')
-      .select('*, zones(code, label), salles(label)', { count:'exact' })
+      .select('*, zones(code, label), salles(label), nc_mesures(nc_id, non_conformites(id, numero, statut))', { count:'exact' })
       .gte('date_controle', dDebut)
       .lte('date_controle', dFin)
       .order('date_controle', { ascending: false })
@@ -314,7 +329,7 @@ export default function ListeControles() {
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 dark:bg-gray-800/50">
                   <tr>
-                    {['Date','Zone','Salle','Point','Type','Cl.','Germes','Lot','Statut','Actions'].map(h => (
+                    {['Date','Zone','Salle','Point','Type','Cl.','Germes','Lot','Statut','Fiche NC','Actions'].map(h => (
                       <th key={h} className="text-left text-xs font-bold text-gray-500 uppercase tracking-wide px-3 py-3 whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
@@ -438,6 +453,9 @@ export default function ListeControles() {
                             </span>
                           ) : '—'}
                         </td>
+
+                        {/* Fiche NC */}
+                        <td className="px-3 py-2"><FicheCell row={row}/></td>
 
                         {/* Actions */}
                         <td className="px-3 py-2">
