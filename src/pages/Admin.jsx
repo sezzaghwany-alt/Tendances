@@ -1099,6 +1099,264 @@ function NormesEauTab() {
 }
 
 
+// ── Export Environnement par période (sauvegarde complète) ───────────────────
+const ZONES_POCHES_EXP = ['PREPARATION', 'REMPLISSAGE', 'PREP_REMPL']
+const STATUT_LIB_EXP = { ok:'Conforme', alerte:'Alerte', action:'Action', nc:'NC' }
+
+function isoLocal(d) {
+  const p = n => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
+function periodePreset(code) {
+  const now = new Date(), y = now.getFullYear(), m = now.getMonth()
+  switch (code) {
+    case 'mois':      return [new Date(y, m, 1), now]
+    case 'mois_prec': return [new Date(y, m - 1, 1), new Date(y, m, 0)]
+    case 'trim':      { const q = Math.floor(m / 3) * 3; return [new Date(y, q, 1), now] }
+    case 'annee':     return [new Date(y, 0, 1), now]
+    case 'annee_prec':return [new Date(y - 1, 0, 1), new Date(y - 1, 11, 31)]
+    default:          return [new Date(y, m, 1), now]
+  }
+}
+function statutCalcule(v, n) {
+  if (v === null || v === undefined || !n) return null
+  if (n.norme  > 0 && v >= n.norme)  return 'nc'
+  if (n.action > 0 && v >= n.action) return 'action'
+  if (n.alerte > 0 && v >= n.alerte) return 'alerte'
+  return 'ok'
+}
+
+function ExportPeriodeEnv() {
+  const [p0, p1] = periodePreset('mois')
+  const [du, setDu]       = useState(isoLocal(p0))
+  const [au, setAu]       = useState(isoLocal(p1))
+  const [zone, setZone]   = useState('')
+  const [type, setType]   = useState('')
+  const [zones, setZones] = useState([])
+  const [busy, setBusy]   = useState(false)
+  const [msg, setMsg]     = useState({ text:'', type:'' })
+
+  useEffect(() => {
+    supabase.from('zones').select('id, code, label').order('label')
+      .then(({ data }) => setZones(data || []))
+  }, [])
+
+  // Zones proposées : les 3 zones poches sont regroupées en une seule option
+  const zonesOptions = (() => {
+    const autres = zones.filter(z => !ZONES_POCHES_EXP.includes(z.code)).map(z => ({ value: z.id, label: z.label }))
+    const poches = zones.filter(z => ZONES_POCHES_EXP.includes(z.code))
+    if (poches.length) autres.push({ value: 'POCHES', label: 'Préparation Poches Stériles' })
+    return autres.sort((a, b) => a.label.localeCompare(b.label))
+  })()
+
+  function preset(code) {
+    const [a, b] = periodePreset(code)
+    setDu(isoLocal(a)); setAu(isoLocal(b))
+  }
+
+  function show(text, t = 'ok') { setMsg({ text, type: t }) }
+
+  async function loadXLSX() {
+    if (window.XLSX) return window.XLSX
+    return new Promise((resolve, reject) => {
+      const s = document.createElement('script')
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'
+      s.onload = () => resolve(window.XLSX)
+      s.onerror = () => reject(new Error('Chargement de la bibliothèque Excel impossible'))
+      document.head.appendChild(s)
+    })
+  }
+
+  async function exporter() {
+    if (!du || !au) return show('Choisir une date de début et une date de fin', 'warn')
+    if (du > au)    return show('La date de début est après la date de fin', 'warn')
+    setBusy(true); show('Chargement des données…', 'info')
+    try {
+      const XLSX = await loadXLSX()
+
+      // 1. Normes (pour les limites et les statuts manquants)
+      const { data: normes } = await supabase.from('normes').select('*')
+      const nmap = {}
+      ;(normes || []).forEach(n => {
+        nmap[`${n.zone_id}_${n.type_controle}_${n.classe}`] = n
+        if (!nmap[`${n.zone_id}_${n.type_controle}`]) nmap[`${n.zone_id}_${n.type_controle}`] = n
+      })
+
+      // 2. Contrôles de la période, par pages de 1000
+      const zoneIds = zone === 'POCHES'
+        ? zones.filter(z => ZONES_POCHES_EXP.includes(z.code)).map(z => z.id)
+        : zone ? [zone] : null
+      let all = [], from = 0
+      while (true) {
+        let q = supabase.from('controles')
+          .select('id, date_controle, type_controle, point, germes, classe, statut, lot, zone_id, created_at, zones(code, label), salles(label), nc_mesures(nc_id, non_conformites(numero))')
+          .gte('date_controle', du).lte('date_controle', au)
+          .order('date_controle', { ascending: true })
+          .order('point', { ascending: true })
+          .range(from, from + 999)
+        if (zoneIds) q = q.in('zone_id', zoneIds)
+        if (type)    q = q.eq('type_controle', type)
+        const { data, error } = await q
+        if (error) throw new Error(error.message)
+        if (!data?.length) break
+        all = all.concat(data)
+        show(`Chargement… ${all.length} résultats`, 'info')
+        if (data.length < 1000) break
+        from += 1000
+      }
+      if (!all.length) { setBusy(false); return show('Aucun contrôle sur cette période', 'warn') }
+
+      // 3. Feuille Résultats
+      const zoneLib = r => ZONES_POCHES_EXP.includes(r.zones?.code) ? 'Préparation Poches Stériles' : (r.zones?.label || '')
+      const rows = all.map(r => {
+        const n = nmap[`${r.zone_id}_${r.type_controle}_${r.classe}`] || nmap[`${r.zone_id}_${r.type_controle}`]
+        const st = r.statut || statutCalcule(r.germes, n)
+        const lien = Array.isArray(r.nc_mesures) ? r.nc_mesures[0] : r.nc_mesures
+        const [y, m, d] = r.date_controle.split('-').map(Number)
+        return {
+          _st: st, _zone: zoneLib(r),
+          row: {
+            'Date':           new Date(y, m - 1, d),
+            'Zone':           zoneLib(r),
+            'Salle':          r.salles?.label || '',
+            'Point':          r.point,
+            'Type':           r.type_controle,
+            'Classe':         r.classe || '',
+            'Germes (UFC)':   r.germes,
+            'Limite alerte':  n?.alerte ?? '',
+            'Limite action':  n?.action ?? '',
+            'Norme':          n?.norme  ?? '',
+            'Statut':         STATUT_LIB_EXP[st] || '',
+            'Lot':            r.lot || '',
+            'Fiche NC':       lien?.non_conformites?.numero || '',
+            'Saisi le':       r.created_at ? new Date(r.created_at).toLocaleString('fr-FR') : '',
+            'Identifiant':    r.id,
+          },
+        }
+      })
+      const wsR = XLSX.utils.json_to_sheet(rows.map(x => x.row), { cellDates: true, dateNF: 'dd/mm/yyyy' })
+      wsR['!cols'] = [{wch:11},{wch:28},{wch:24},{wch:9},{wch:9},{wch:7},{wch:12},{wch:12},{wch:12},{wch:8},{wch:10},{wch:14},{wch:12},{wch:19},{wch:38}]
+      wsR['!autofilter'] = { ref: wsR['!ref'] }
+
+      // 4. Feuille Synthèse (zone × classe × type)
+      const grp = {}
+      rows.forEach(({ row, _st, _zone }) => {
+        const k = `${_zone}|${row.Classe}|${row.Type}`
+        const g = grp[k] ||= { Zone: _zone, Classe: row.Classe, Type: row.Type, N: 0, pos: 0, ok: 0, alerte: 0, action: 0, nc: 0 }
+        g.N++
+        if (row['Germes (UFC)'] > 0) g.pos++
+        if (_st && g[_st] !== undefined) g[_st]++
+      })
+      const synth = Object.values(grp)
+        .sort((a, b) => a.Zone.localeCompare(b.Zone) || a.Classe.localeCompare(b.Classe) || a.Type.localeCompare(b.Type))
+        .map(g => ({
+          'Zone': g.Zone, 'Classe': g.Classe, 'Type': g.Type,
+          'Nb contrôles': g.N, 'Nb positifs (>0 UFC)': g.pos, '% positifs': g.N ? g.pos / g.N : 0,
+          'Alertes': g.alerte, 'Actions': g.action, 'NC': g.nc, '% conformité': g.N ? g.ok / g.N : 0,
+        }))
+      const wsS = XLSX.utils.json_to_sheet(synth)
+      const rS = XLSX.utils.decode_range(wsS['!ref'])
+      for (let R = 1; R <= rS.e.r; R++) [5, 9].forEach(C => {
+        const c = wsS[XLSX.utils.encode_cell({ r: R, c: C })]; if (c) c.z = '0.0%'
+      })
+      wsS['!cols'] = [{wch:28},{wch:7},{wch:9},{wch:12},{wch:18},{wch:11},{wch:9},{wch:9},{wch:6},{wch:13}]
+
+      // 5. Feuille Informations (traçabilité de l'extraction)
+      const { data: u } = await supabase.auth.getUser()
+      const fr = s => s.split('-').reverse().join('/')
+      const zoneTxt = zone ? (zonesOptions.find(z => z.value === zone)?.label || zone) : 'Toutes'
+      const wsI = XLSX.utils.aoa_to_sheet([
+        ['Export des contrôles d\'environnement — EnviroControl'],
+        [],
+        ['Période du', fr(du)],
+        ['Période au', fr(au)],
+        ['Zone', zoneTxt],
+        ['Type de contrôle', type || 'Tous'],
+        ['Nombre de résultats', all.length],
+        ['Extrait le', new Date().toLocaleString('fr-FR')],
+        ['Extrait par', u?.user?.email || ''],
+        [],
+        ['Statut : valeur enregistrée ; à défaut, recalculée avec les normes actuelles (NC ≥ norme, action ≥ limite d\'action, alerte ≥ limite d\'alerte).'],
+      ])
+      wsI['!cols'] = [{ wch: 22 }, { wch: 40 }]
+
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, wsR, 'Résultats')
+      XLSX.utils.book_append_sheet(wb, wsS, 'Synthèse')
+      XLSX.utils.book_append_sheet(wb, wsI, 'Informations')
+      XLSX.writeFile(wb, `Controles_Environnement_${du}_au_${au}.xlsx`)
+      show(`✅ Export réussi — ${all.length} résultats du ${fr(du)} au ${fr(au)}`)
+    } catch (e) {
+      show('Erreur export : ' + e.message, 'error')
+    }
+    setBusy(false)
+  }
+
+  const PRESETS = [['mois','Mois en cours'],['mois_prec','Mois précédent'],['trim','Trimestre en cours'],['annee','Année en cours'],['annee_prec','Année précédente']]
+  const inp = 'border border-gray-300 dark:border-gray-700 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-900 dark:text-white'
+
+  return (
+    <div className="card p-5 border-l-4" style={{ borderLeftColor: '#7c3aed' }}>
+      <div className="flex items-center gap-3 mb-3">
+        <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl" style={{ background: '#F3E8FF' }}>🗂️</div>
+        <div>
+          <div className="font-bold text-gray-900 dark:text-white">Sauvegarde Environnement par période</div>
+          <div className="text-xs text-gray-500 mt-0.5">Tous les résultats (conformes et hors limites) · 3 onglets : Résultats, Synthèse, Informations</div>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-2 mb-3">
+        {PRESETS.map(([c, l]) => (
+          <button key={c} onClick={() => preset(c)} disabled={busy}
+            className="px-3 py-1.5 rounded-full text-xs font-semibold border border-purple-200 text-purple-700 bg-purple-50 hover:bg-purple-100 disabled:opacity-50">
+            {l}
+          </button>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+        <label className="text-xs text-gray-500">Du
+          <input type="date" value={du} onChange={e => setDu(e.target.value)} className={`${inp} w-full mt-1`} />
+        </label>
+        <label className="text-xs text-gray-500">Au
+          <input type="date" value={au} onChange={e => setAu(e.target.value)} className={`${inp} w-full mt-1`} />
+        </label>
+        <label className="text-xs text-gray-500">Zone
+          <select value={zone} onChange={e => setZone(e.target.value)} className={`${inp} w-full mt-1`}>
+            <option value="">Toutes les zones</option>
+            {zonesOptions.map(z => <option key={z.value} value={z.value}>{z.label}</option>)}
+          </select>
+        </label>
+        <label className="text-xs text-gray-500">Type
+          <select value={type} onChange={e => setType(e.target.value)} className={`${inp} w-full mt-1`}>
+            <option value="">Tous</option>
+            <option value="ACTIF">Actif</option>
+            <option value="PASSIF">Passif</option>
+            <option value="SURFACE">Surface</option>
+          </select>
+        </label>
+      </div>
+
+      <button onClick={exporter} disabled={busy}
+        className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold text-white disabled:opacity-50"
+        style={{ background: '#7c3aed' }}>
+        {busy
+          ? <span className="animate-spin inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
+          : '📥'}
+        Exporter la période
+      </button>
+
+      {msg.text && (
+        <div className={`mt-3 rounded-lg px-3 py-2 text-sm ${
+          msg.type === 'error' ? 'bg-red-50 text-red-700' :
+          msg.type === 'warn'  ? 'bg-amber-50 text-amber-700' :
+          msg.type === 'info'  ? 'bg-blue-50 text-blue-700' :
+                                 'bg-green-50 text-green-700'}`}>{msg.text}</div>
+      )}
+    </div>
+  )
+}
+
 // ── Export Excel ──────────────────────────────────────────────────────────
 function ExportTab() {
   const annee = new Date().getFullYear()
@@ -1330,8 +1588,8 @@ function ExportTab() {
   return (
     <div className="space-y-5">
       <div>
-        <h2 className="text-lg font-bold text-gray-800 dark:text-white">Export Excel — Alertes</h2>
-        <p className="text-sm text-gray-500 mt-1">Exporte les non-conformités et dépassements de chaque module</p>
+        <h2 className="text-lg font-bold text-gray-800 dark:text-white">Export Excel</h2>
+        <p className="text-sm text-gray-500 mt-1">Sauvegarde des résultats par période et export des alertes de chaque module</p>
       </div>
 
       {msg.text && (
@@ -1341,6 +1599,8 @@ function ExportTab() {
                                'bg-green-50 border border-green-200 text-green-700'
         }`}>{msg.text}</div>
       )}
+
+      <ExportPeriodeEnv/>
 
       <div className="grid grid-cols-1 gap-4">
         {MODULES.map(m => (
